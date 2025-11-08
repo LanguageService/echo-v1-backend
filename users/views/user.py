@@ -19,6 +19,7 @@ User = get_user_model()
 @extend_schema_view(
     create=extend_schema(exclude=True),
 )
+@extend_schema(tags=["Users"])
 class UserViewSet(BaseViewSet):
     queryset = User.objects.filter(archived__isnull=True).filter(archived=None)
     serializer_class = serializers.UserSerializer

@@ -16,6 +16,7 @@ class OCRResult(BaseModel):
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ocr_results', null=True, blank=True)
     image = models.ImageField(upload_to='ocr_images/')
+    feature_type = models.CharField(max_length=50, default="IMAGE_TRANSLATION", null=True, blank=True)
     image_url = models.URLField(blank=True, null=True, help_text="Cloud storage URL for uploaded image")
     original_filename = models.CharField(max_length=255, blank=True, null=True, help_text="Original filename of uploaded image")
     image_format = models.CharField(max_length=10, blank=True, null=True, help_text="Image file format (jpg, png, etc.)")
@@ -23,7 +24,11 @@ class OCRResult(BaseModel):
     detected_language = models.CharField(max_length=10, blank=True, null=True)
     translated_text = models.TextField(blank=True, null=True)
     confidence_score = models.FloatField(blank=True, null=True)
-    processing_time = models.FloatField(blank=True, null=True)  # in seconds
+    processing_time = models.FloatField(blank=True, null=True, help_text="Total processing time in seconds")  # in seconds
+    ocr_processing_time = models.FloatField(blank=True, null=True, help_text="Time for OCR step")
+    language_detection_time = models.FloatField(blank=True, null=True, help_text="Time for language detection")
+    translation_processing_time = models.FloatField(blank=True, null=True, help_text="Time for translation step")
+
     
     # Translation service tracking
     translation_provider = models.CharField(

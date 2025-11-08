@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
+from drf_spectacular.utils import extend_schema
 
 from core.utils import error_400, send_token, serializer_errors,error_401
 from .. import choices, models, serializers
@@ -39,6 +40,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             return error_400(str(e))
 
 
+@extend_schema(tags=["Auth"])
 class AuthViewSet(GenericViewSet):
     queryset = User.objects.all()
     serializer_class = serializers.UserSerializer
@@ -56,9 +58,10 @@ class AuthViewSet(GenericViewSet):
         authentication_classes=[],
         permission_classes=[AllowAny],
         serializer_class=serializers.CustomerRegistrationSerializer,
-        url_path="gig_seeker/user",
+        url_path="customer/user",
     )
-    def create_gig_seeker_user(self, request):
+    @extend_schema(tags=["Auth"])
+    def create_customer_user(self, request):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
@@ -89,6 +92,7 @@ class AuthViewSet(GenericViewSet):
         serializer_class=serializers.AdminUserRegistrationSerializer,
         url_path="admin/user",
     )
+    @extend_schema(tags=["Auth"])
     def create_admin_user(self, request):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
@@ -116,6 +120,7 @@ class AuthViewSet(GenericViewSet):
         serializer_class=serializers.SuperAdminUserRegistrationSerializer,
         url_path="super/user",
     )
+    @extend_schema(tags=["Auth"])
     def create_super_admin_user(self, request):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
@@ -143,6 +148,7 @@ class AuthViewSet(GenericViewSet):
         authentication_classes=[],
         permission_classes=[],
     )
+    @extend_schema(tags=["Auth"])
     def resend_otp(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
@@ -170,6 +176,7 @@ class AuthViewSet(GenericViewSet):
         serializer_class=serializers.ChangePasswordSerializer,
         permission_classes=[IsAuthenticated],
     )
+    @extend_schema(tags=["Auth"])
     def change_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
@@ -192,6 +199,7 @@ class AuthViewSet(GenericViewSet):
         authentication_classes=[],
         permission_classes=[],
     )
+    @extend_schema(tags=["Auth"])
     def verify_otp(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
@@ -221,6 +229,7 @@ class AuthViewSet(GenericViewSet):
         permission_classes=[],
         serializer_class=serializers.EmailSerializer,
     )
+    @extend_schema(tags=["Auth"])
     def initiate_reset_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
@@ -252,6 +261,7 @@ class AuthViewSet(GenericViewSet):
         authentication_classes=[],
         permission_classes=[],
     )
+    @extend_schema(tags=["Auth"])
     def reset_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
@@ -283,6 +293,7 @@ class AuthViewSet(GenericViewSet):
         authentication_classes=[],
         permission_classes=[],
     )
+    @extend_schema(tags=["Auth"])
     def verify_login(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():

@@ -66,17 +66,23 @@ urlpatterns = [
     path('api/v1/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     
     # Authentication
-    path('auth/v1/', include('users.urls')),
+    path('api/v1/auth/', include('users.urls.auth')),
+    path('api/v1/user/', include('users.urls.users')),
+
     
     # API Services
     path('api/v1/image/', include('ocr_app.urls')),
-    path('api/v1/voice/', include('voice_translator.urls')),
+    path('api/v1/voice/', include('translation.urls.voice')),
+    path('api/v1/text/', include('translation.urls.text')),
+
     
     # Statistics
     path('api/v1/statistics/', include('stats_app.urls')),
     
     # Performance Optimization APIs
     path('api/v1/performance/', include('performance.urls')),
+
+    path('api/v1/payment/', include('payment.urls'))
 ]
 
 # Serve media files during development

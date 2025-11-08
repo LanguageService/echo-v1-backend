@@ -304,7 +304,7 @@ class UserStatsService:
     def get_user_statistics(user=None):
         """Get user-specific or overall statistics"""
         from ocr_app.models import OCRResult, TranslationFailureLog
-        from voice_translator.models import Translation
+        from translation.models import Translation
         from datetime import timedelta
         
         now = timezone.now()
@@ -323,7 +323,7 @@ class UserStatsService:
     def _get_user_specific_stats(user, today, week_ago, month_ago):
         """Get statistics for a specific user"""
         from ocr_app.models import OCRResult, TranslationFailureLog
-        from voice_translator.models import Translation
+        from translation.models import Translation
         
         # OCR Statistics
         user_ocr_total = OCRResult.objects.filter(user=user).count()
@@ -400,7 +400,7 @@ class UserStatsService:
     def _get_admin_statistics(today, week_ago, month_ago):
         """Get system-wide statistics for admin"""
         from ocr_app.models import OCRResult, TranslationFailureLog
-        from voice_translator.models import Translation
+        from translation.models import Translation
         
         # User Statistics
         total_users = User.objects.count()

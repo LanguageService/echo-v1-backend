@@ -432,6 +432,11 @@ class OCRTranslatorService:
         
         try:
             # Initialize result structure
+            step_times = {
+                'ocr': 0.0,
+                'language_detection': 0.0,
+                'translation': 0.0,
+            }
             result = {
                 'success': False,
                 'original_text': '',
@@ -446,7 +451,9 @@ class OCRTranslatorService:
             
             # Step 1: Extract text using Gemini Vision
             logger.info("Extracting text from image using Gemini Vision...")
+            ocr_start_time = time.time()
             ocr_result = self.vision_processor.extract_text(image_path)
+            step_times['ocr'] = time.time() - ocr_start_time
             
             result['original_text'] = ocr_result['text']
             result['confidence_score'] = ocr_result['confidence']
@@ -460,7 +467,9 @@ class OCRTranslatorService:
             
             # Step 2: Detect language
             logger.info("Detecting language...")
+            lang_start_time = time.time()
             lang_result = self.language_detector.detect_language(ocr_result['text'])
+            step_times['language_detection'] = time.time() - lang_start_time
             
             result['detected_language'] = lang_result['language']
             result['language_name'] = lang_result['language_name']
@@ -468,6 +477,7 @@ class OCRTranslatorService:
             # Step 3: Translate to English using multiple translation providers
             logger.info("Translating text using multiple translation services...")
             
+            translation_start_time = time.time()
             # Use the new translation manager with fallback
             translation_result = translation_manager.translate_with_fallback(
                 text=ocr_result['text'],
@@ -477,6 +487,7 @@ class OCRTranslatorService:
                 user=user,
                 ocr_result=ocr_result_instance
             )
+            step_times['translation'] = time.time() - translation_start_time
             
             if translation_result.success:
                 result['translated_text'] = translation_result.translated_text
@@ -501,6 +512,9 @@ class OCRTranslatorService:
             
             # Calculate processing time
             result['processing_time'] = time.time() - start_time
+            result['ocr_processing_time'] = step_times['ocr']
+            result['language_detection_time'] = step_times['language_detection']
+            result['translation_processing_time'] = step_times['translation']
             
             logger.info(f"Processing completed successfully in {result['processing_time']:.2f} seconds")
             
@@ -519,7 +533,10 @@ class OCRTranslatorService:
                 'confidence_score': 0.0,
                 'processing_time': time.time() - start_time,
                 'word_count': 0,
-                'error_message': error_msg
+                'error_message': error_msg,
+                'ocr_processing_time': step_times.get('ocr', 0.0),
+                'language_detection_time': step_times.get('language_detection', 0.0),
+                'translation_processing_time': step_times.get('translation', 0.0),
             }
 
 

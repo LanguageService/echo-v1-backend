@@ -4,15 +4,18 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
+from drf_spectacular.utils import extend_schema
 
 from core.utils import error_400, error_404, serializer_errors
-from users_.models.users import User
+from users.models.users import User
 from wallet.models import Wallet
 from .models.payment import Payment
 from .utils import StripeIntegration
 from . import choices, serializers
 
 
+
+@extend_schema(tags=["Payment"])
 class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericViewSet):
     queryset = Payment.objects.all()
     serializer_class = serializers.PaymentSerializer

@@ -4,20 +4,17 @@ Statistics URLs
 URL configuration for statistics API endpoints.
 """
 
-from django.urls import path
-from .views import (
-    stats_api_info, stats_health_check, 
-    personal_stats_view, admin_stats_view
-)
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import StatsViewSet
 
 app_name = 'stats_app'
 
+# Create a router and register our viewset with it.
+router = DefaultRouter()
+router.register(r'', StatsViewSet, basename='stats')
+
+# The API URLs are now determined automatically by the router.
 urlpatterns = [
-    # API Info and Health
-    path('', stats_api_info, name='stats_api_info'),
-    path('health/', stats_health_check, name='stats_health_check'),
-    
-    # Statistics endpoints
-    path('user/', personal_stats_view, name='personal_stats'),
-    path('admin/', admin_stats_view, name='admin_stats'),
+    path('', include(router.urls)),
 ]

@@ -63,7 +63,7 @@ INSTALLED_THIRD_PARTY_APPS = [
 INTERNAL_APPS = [
     'users',
     'ocr_app',
-    'voice_translator',
+    'translation',
     'stats_app',
     'realtime',
     'performance',
