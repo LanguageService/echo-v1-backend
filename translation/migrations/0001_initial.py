@@ -120,7 +120,7 @@ class Migration(migrations.Migration):
                 ('format', models.CharField(default='wav', max_length=10)),
                 ('sample_rate', models.IntegerField(default=44100)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('translation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='audio_files', to='voice_translator.translation')),
+                ('translation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='audio_files', to='translation.translation')),
             ],
             options={
                 'ordering': ['-date_created'],
@@ -138,7 +138,7 @@ class Migration(migrations.Migration):
                 ('text_to_text', models.FloatField(default=0.0)),
                 ('text_to_speech', models.FloatField(default=0.0)),
                 ('total', models.FloatField(default=0.0)),
-                ('translation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='processing_times', to='voice_translator.translation')),
+                ('translation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='processing_times', to='translation.translation')),
             ],
             options={
                 'ordering': ['-last_modified'],
