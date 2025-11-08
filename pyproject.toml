@@ -1,0 +1,38 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "django-cors-headers>=4.7.0",
+    "django>=5.2.5",
+    "djangorestframework>=3.16.1",
+    "langdetect>=1.0.9",
+    "numpy>=2.3.2",
+    "opencv-python>=4.11.0.86",
+    "pillow>=11.3.0",
+    "pytesseract>=0.3.13",
+    "google-genai>=1.31.0",
+    "pyjwt>=2.10.1",
+    "flask-dance>=7.1.0",
+    "flask-login>=0.6.3",
+    "oauthlib>=3.3.1",
+    "sendgrid>=6.12.4",
+    "django-allauth>=65.11.1",
+    "djangorestframework-simplejwt>=5.5.1",
+    "dj-rest-auth>=7.0.1",
+    "drf-spectacular>=0.28.0",
+    "psycopg2-binary>=2.9.10",
+    "celery>=5.5.3",
+    "anthropic>=0.64.0",
+    "openai>=1.102.0",
+    "google-cloud-storage>=3.3.0",
+    "boto3>=1.40.21",
+    "channels>=4.3.1",
+    "channels-redis>=4.3.0",
+    "redis>=6.4.0",
+    "daphne>=4.2.1",
+    "httpx[http2]>=0.28.1",
+    "python-decouple>=3.8",
+    "requests>=2.32.5",
+]
