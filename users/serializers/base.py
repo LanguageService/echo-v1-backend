@@ -45,6 +45,7 @@ class LoginSerializer(TokenObtainPairSerializer):
             otp_obj = OneTimePassword.generate_otp(
                 attrs["email"], token_type=TokenType.LOGIN
             )
+            print(f"OTP:{otp_obj.token} email: {email}")
             send_token(email, otp_obj)
         
         # Only generate token if verified
@@ -86,7 +87,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class OTPVerificationSerializer(serializers.Serializer):
     otp_code = serializers.RegexField(regex=r"^\d{6}$")
-    # email = serializers.EmailField()
+    email = serializers.EmailField()
 
 
 class EmailSerializer(serializers.Serializer):

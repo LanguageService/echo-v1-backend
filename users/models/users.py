@@ -125,16 +125,15 @@ class OneTimePassword(BaseModel):
     has_expired = models.BooleanField(default=False)
 
 
-    @classmethod
-    def has_expired(self):
+    def check_if_expired(self): # <- This is now an instance method
         seconds_elapsed = (timezone.now() - self.created).total_seconds()
         hours_elapsed = seconds_elapsed / 3600
 
         has_expired = hours_elapsed > settings.VERIFICATION_OTP_TIMEOUT
-        self.has_expired = has_expired
-        self.save()
+        if has_expired:
+            self.has_expired = True
+            self.save()
         return has_expired
-
 
     @staticmethod
     def cleanup_expired_otps():
@@ -164,15 +163,18 @@ class OneTimePassword(BaseModel):
 
     @classmethod
     def verify_token(cls, token, token_type=choices.TokenType.REGISTRATION, email=None):
-        q = cls.objects.filter(token=token, token_type=token_type)
+
+        q = cls.objects.filter(token=token)
+
         if email:
             q = q.filter(email=email)
 
         otp = q.first()
+        
         if not otp:
             return False, _("Token is invalid")
 
-        if otp.has_expired:
+        if otp.check_if_expired():
             return False, _("Token has expired")
 
         if otp.used:
@@ -185,8 +187,8 @@ class OneTimePassword(BaseModel):
         cls.objects.filter(token=token, token_type=token_type).update(used=is_used)
 
     @classmethod
-    def get_user(cls, token, token_type):
-        otp = cls.objects.filter(token=token, token_type=token_type).first()
+    def get_user(cls, token,email,token_type=None):
+        otp = cls.objects.filter(token=token, email=email).first()
         if otp:
             return User.objects.filter(email=otp.email).first()
 
@@ -196,11 +198,12 @@ class OneTimePassword(BaseModel):
     def activate_user(
         cls, token, token_type=choices.TokenType.REGISTRATION, email=None
     ):
+
         status, msg = cls.verify_token(token, token_type, email)
         if not status:
             return status, msg
 
-        user = cls.get_user(token, token_type)
+        user = cls.get_user(token=token, email=email)
         if not user:
             return False, USER_NOT_FOUND
 

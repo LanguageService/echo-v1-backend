@@ -203,8 +203,10 @@ class AuthViewSet(GenericViewSet):
     def verify_otp(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
+            email = serializer.validated_data["email"]
             otp_code = serializer.validated_data["otp_code"]
-            success, msg = models.OneTimePassword.activate_user(otp_code)
+            print(f"email: {email}")
+            success, msg = models.OneTimePassword.activate_user(token=otp_code,email=email)
             if not success:
                 return error_400(msg)
 
