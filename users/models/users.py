@@ -188,7 +188,10 @@ class OneTimePassword(BaseModel):
 
     @classmethod
     def get_user(cls, token,email,token_type=None):
-        otp = cls.objects.filter(token=token, email=email).first()
+        if token_type:
+            otp = cls.objects.filter(token=token, token_type=token_type).first()
+        else:
+            otp = cls.objects.filter(token=token).first()
         if otp:
             return User.objects.filter(email=otp.email).first()
 
@@ -223,9 +226,11 @@ class OneTimePassword(BaseModel):
         email=None,
     ):
         status, msg = cls.verify_token(token, token_type, email)
+        print(f"status: {status} msg: {msg}")
         if not status:
             return status, msg
 
+        print(f"token: {token} token_type: {token_type}")
         user = cls.get_user(token, token_type)
         if not user:
             return False, USER_NOT_FOUND
