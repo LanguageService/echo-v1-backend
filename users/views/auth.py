@@ -63,27 +63,39 @@ class AuthViewSet(GenericViewSet):
     @extend_schema(tags=["Auth"])
     def create_customer_user(self, request):
         serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            otp = self.send_activation_mail(user)
-            return Response(
-                {
-                    "code": status.HTTP_201_CREATED,
-                    "status": "success",
-                    "message": "User created successfully, Check email for verification code",
-                    "data": {
-                        "token" : user.token(),
-                        "otp" : otp, # This is temporary still we have email or sms service up
-                        "user": serializer.data
-
+        if not serializer.is_valid():
+            errors = serializer.errors
+            # Check if the error is specifically because the email already exists.
+            if 'email' in errors and any('already exist' in e for e in errors['email']):
+                try:
+                    user = User.objects.get(email=request.data.get('email'))
+                    otp = self.send_activation_mail(user) if not user.is_verified else None
+                    data = {
+                        'is_verified': user.is_verified,
+                        'otp': otp  # TODO: remove
                     }
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        default_errors = serializer.errors
-        error_message = serializer_errors(default_errors)
+                    return error_400("User already exist", data)
+                except User.DoesNotExist:
+                    # This is unlikely but handles a race condition.
+                    return error_400(serializer_errors(errors))
+            
+            return error_400(serializer_errors(errors))
 
-        return error_400(error_message)
+        user = serializer.save()
+        otp = self.send_activation_mail(user)
+        user_data = serializers.UserSerializer(user).data
+        return Response(
+            {
+                "code": status.HTTP_201_CREATED,
+                "status": "success",
+                "message": "User created successfully, Check email for verification code",
+                "data": {
+                    "token": user.token(),
+                    "otp": otp,  # This is temporary still we have email or sms service up
+                    "user": user_data
+                }
+            }
+        )
 
     @action(
         detail=False,

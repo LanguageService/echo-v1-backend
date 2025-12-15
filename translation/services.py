@@ -508,6 +508,9 @@ class VoiceTranslationService:
             # Step 1: Speech to Text
             logger.info("Starting speech-to-text conversion...")
             source_lang = settings.source_language if settings else 'auto'
+
+            # TODO: rename the api source and target field to language1 and language2
+            # after the ASR detect the source, then we set the source and target to be saved in the db
             
             stt_result = self.speech_service.transcribe_audio(audio_file, source_lang)
             if not stt_result['success']:
