@@ -164,7 +164,7 @@ class OneTimePassword(BaseModel):
     @classmethod
     def verify_token(cls, token, token_type=choices.TokenType.REGISTRATION, email=None):
 
-        # q = cls.objects.filter(token=token)
+        q = cls.objects.filter(token=token)
 
         if email:
             q = cls.objects.filter(email=email)
