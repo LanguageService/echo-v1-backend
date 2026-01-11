@@ -19,3 +19,11 @@ class PaymentType(models.TextChoices):
 
     NEW_SERVICE = "NEW_SERVICE", _("NEW_SERVICE")
     SUBSCRIPTION = "SUBSCRIPTION", _("SUBSCRIPTION")
+
+
+
+KPAY_STATUS_MAP = {
+    "01": "SUCCESS",
+    "02": "FAILED",
+    "00": "PENDING",
+}

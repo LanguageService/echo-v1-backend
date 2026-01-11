@@ -258,7 +258,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5000',
     'http://127.0.0.1:5000',
     'https://*.replit.dev',
-    'https://*.ngrok-free.app'
+    'https://echo-v1-backend-sh6i.onrender.com',
 ]
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access for SPA
@@ -280,7 +280,7 @@ CORS_ALLOWED_ORIGINS = [
    "https://prod.d2rhhq8y49f47w.amplifyapp.com", # Frontend Prod
    "https://app.echo.com",  # Frontend Prod
    "http://app.echo.com",  # Frontend Prod
-   "http://localhost:4200",  # Frontend Local
+   "http://localhost:3000",  # Frontend Local
 
 
 ]

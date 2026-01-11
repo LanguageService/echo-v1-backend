@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from .models.payment import Payment
+from .models.webhook import KPayWebhookEvent
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -17,3 +18,11 @@ class TopUpSerializer(serializers.Serializer):
     )
     callback_url = serializers.URLField()
 
+
+
+
+
+class KPayWebhookSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = KPayWebhookEvent
+        fields = "__all__"
