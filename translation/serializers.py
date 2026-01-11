@@ -194,8 +194,11 @@ class VoiceTranslationResponseSerializer(serializers.Serializer):
     processing_time = serializers.FloatField(required=False)
     error = serializers.CharField(required=False)
     audio_available = serializers.BooleanField(required=False)
+    original_audio_url = serializers.URLField(required=False, allow_null=True)
+    translated_audio_url = serializers.URLField(required=False, allow_null=True)
     tts_note = serializers.CharField(required=False)
     steps = serializers.DictField(required=False)
+    
 
 
 class TranslationHistorySerializer(serializers.Serializer):

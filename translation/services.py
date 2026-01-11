@@ -616,6 +616,8 @@ class VoiceTranslationService:
                 'translated_text': translated_text,
                 'original_language': detected_language,
                 'target_language': target_language,
+                'original_audio_url': original_audio_url,
+                'translated_audio_url': translated_audio_url,
                 'confidence_score': stt_result['confidence'],
                 'processing_time': total_processing_time,
                 'steps': {
@@ -1083,6 +1085,8 @@ class AsyncVoiceTranslationService:
                 'translated_text': translated_text,
                 'original_language': detected_language,
                 'target_language': target_language,
+                'original_audio_url': original_audio_url,
+                'translated_audio_url': translated_audio_url,
                 'confidence_score': stt_result['confidence'],
                 'processing_time': time.time() - start_time,
                 'steps': {
