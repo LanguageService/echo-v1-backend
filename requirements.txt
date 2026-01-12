@@ -124,4 +124,4 @@ zope.interface==7.2
 pyotp==2.9.0
 cloudinary>=1.41.0
 django-cloudinary-storage>=0.3.0
-gTTS>=2.5.1
+
