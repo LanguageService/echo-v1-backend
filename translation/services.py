@@ -401,12 +401,15 @@ class TextToSpeechService(GeminiService):
                 
                 num_samples = int(44100 * duration)
                 
-                # Write silence (0)
-                for _ in range(num_samples):
-                    wav_file.writeframes(struct.pack('h', 0))
+                # Write silence (0) - Optimized bulk write
+                # 16-bit PCM silence is 0x0000
+                data = b'\x00\x00' * num_samples
+                wav_file.writeframes(data)
                     
             buffer.seek(0)
-            return buffer.read()
+            data = buffer.read()
+            logger.info(f"Generated silent WAV: {len(data)} bytes ({duration}s)")
+            return data
         except Exception as e:
             logger.error(f"Failed to generate silent WAV: {e}")
             return None

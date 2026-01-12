@@ -4,3 +4,6 @@ from django.apps import AppConfig
 class VoiceTranslatorConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'translation'
+
+    def ready(self):
+        import translation.signals
