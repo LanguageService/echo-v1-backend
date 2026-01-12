@@ -53,6 +53,8 @@ INSTALLED_THIRD_PARTY_APPS = [
     "django_extensions",
     "rest_framework_simplejwt",
     "rest_framework.authtoken",
+    "cloudinary",
+    "cloudinary_storage",
     # "allauth",
     # "allauth.account",
     # "allauth.socialaccount",

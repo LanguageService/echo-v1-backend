@@ -71,6 +71,7 @@ CLOUD_STORAGE_PROVIDERS = [
     ('s3', 'Amazon S3'),
     ('gcs', 'Google Cloud Storage'),
     ('azure', 'Azure Blob Storage'),
+    ('cloudinary', 'Cloudinary'),
 ]
 
 # API rate limits

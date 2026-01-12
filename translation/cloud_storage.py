@@ -14,6 +14,9 @@ from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
 from .models import CloudStorageConfig
 from decouple import config
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +89,25 @@ class CloudStorageService:
                     logger.warning(f"No service account JSON found in {prefix}_SERVICE_ACCOUNT_JSON. Using default credentials.")
                 
                 self.client = storage.Client()
+
+            elif self.config.provider == 'cloudinary':
+                 # Get Cloudinary credentials from environment
+                cloud_name = config(f'{prefix}_CLOUD_NAME')
+                api_key = config(f'{prefix}_API_KEY')
+                api_secret = config(f'{prefix}_API_SECRET')
+                
+                if not cloud_name or not api_key or not api_secret:
+                    logger.error(f"Missing Cloudinary credentials. Expected: {prefix}_CLOUD_NAME, {prefix}_API_KEY, {prefix}_API_SECRET")
+                    return
+
+                # Configure Cloudinary globally or specifically for this instance if needed
+                # Since cloudinary library uses global config, we set it here
+                cloudinary.config(
+                    cloud_name=cloud_name,
+                    api_key=api_key,
+                    api_secret=api_secret
+                )
+                self.client = cloudinary  # Mark client as initialized
                 
         except Exception as e:
             logger.error(f"Failed to initialize {self.config.provider} client: {e}")
@@ -183,6 +205,17 @@ class CloudStorageService:
                 blob = bucket.blob(folder_path)
                 blob.upload_from_file(file, content_type=file.content_type)
                 return f"https://storage.googleapis.com/{bucket_name}/{folder_path}"
+            
+            elif self.config.provider == 'cloudinary':
+                 # Cloudinary handles buckets via cloud_name, folder structure via public_id
+                # but we can optionally use folders
+                response = cloudinary.uploader.upload(
+                    file, 
+                    public_id=folder_path, # Using path as public ID for structure
+                    resource_type="auto"
+                )
+                return response.get('secure_url')
+                 
                 
         except Exception as e:
             logger.error(f"Failed to upload file to {self.config.provider}: {e}")
@@ -206,6 +239,14 @@ class CloudStorageService:
                 blob = bucket.blob(folder_path)
                 blob.upload_from_string(file_content, content_type=content_type)
                 return f"https://storage.googleapis.com/{bucket_name}/{folder_path}"
+                
+            elif self.config.provider == 'cloudinary':
+                response = cloudinary.uploader.upload(
+                    file_content, 
+                    public_id=folder_path,
+                    resource_type="auto"
+                )
+                return response.get('secure_url')
                 
         except Exception as e:
             logger.error(f"Failed to upload bytes to {self.config.provider}: {e}")
@@ -244,6 +285,45 @@ class CloudStorageService:
                 blob = bucket.blob(file_path)
                 blob.delete()
                 return True
+            
+            elif self.config.provider == 'cloudinary':
+                 # Extract public ID from URL
+                # Cloudinary URLs: https://res.cloudinary.com/cloud_name/resource_type/type/v12345/public_id.ext
+                # We stored public_id as the folder path
+                
+                # Simple heuristic: if we used the folder path as public_id, checking if it ends with that
+                # But a safer way for Cloudinary is to use search or just try to delete if we know the public_id
+                # Since we returned secure_url which structure is complex, we need parsing or assume consistent structure.
+                
+                # If we assume we stored it with public_id = folder_path (which we did), 
+                # we can re-derive it if we knew the original structure.
+                # But here we only have the URL.
+                
+                # Let's try to extract parts after version number or upload/
+                try:
+                    # Typical URL: https://res.cloudinary.com/<cloud_name>/<type>/upload/v<version>/<public_id>.<ext>
+                    parts = file_url.split('/')
+                    # find 'upload' index
+                    if 'upload' in parts:
+                        idx = parts.index('upload')
+                        # public_id starts after version (vXXXX) usually at idx+2
+                        # but sometimes version is omitted.
+                        # public_id is everything after that until the end, minus extension
+                        
+                        potential_public_id_parts = parts[idx+1:]
+                        if potential_public_id_parts[0].startswith('v'): # version
+                             potential_public_id_parts = potential_public_id_parts[1:]
+                        
+                        full_path = "/".join(potential_public_id_parts)
+                        # remove extension
+                        public_id = ".".join(full_path.split('.')[:-1])
+                        
+                        cloudinary.uploader.destroy(public_id)
+                        return True
+                except Exception:
+                    logger.warning(f"Could not parse public_id from Cloudinary URL: {file_url}")
+                    return False
+                return False
                 
         except Exception as e:
             logger.error(f"Failed to delete file from {self.config.provider}: {e}")
@@ -262,6 +342,9 @@ class CloudStorageService:
             bucket_source = "S3_BUCKET_NAME"
         elif self.config.provider == 'gcs' and config('GCS_BUCKET_NAME'):
             bucket_source = "GCS_BUCKET_NAME"
+        elif self.config.provider == 'cloudinary':
+            bucket_source = "Cloud Name"
+            bucket_name = config(f'{self.config.credentials_env_prefix}_CLOUD_NAME')
         
         return {
             "status": "configured" if self.is_available() else "error",

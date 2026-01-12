@@ -148,6 +148,8 @@ class CloudStorageConfig(BaseModel):
             vars_list = [f"{prefix}_ACCESS_KEY", f"{prefix}_SECRET_KEY", "S3_BUCKET_NAME"]
         elif self.provider == 'gcs':
             vars_list = [f"{prefix}_SERVICE_ACCOUNT_JSON", "GCS_BUCKET_NAME"]
+        elif self.provider == 'cloudinary':
+            vars_list = [f"{prefix}_CLOUD_NAME", f"{prefix}_API_KEY", f"{prefix}_API_SECRET"]
         
         return vars_list
 
