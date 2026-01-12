@@ -241,10 +241,19 @@ class CloudStorageService:
                 return f"https://storage.googleapis.com/{bucket_name}/{folder_path}"
                 
             elif self.config.provider == 'cloudinary':
+                import io
+                # Explicitly handle bytes for Cloudinary
+                file_obj = io.BytesIO(file_content)
+                # Set a filename so Cloudinary can detect mime type if needed, 
+                # although public_id usually suffices. Use the basename of folder_path.
+                file_obj.name = folder_path.split('/')[-1]
+                
+                logger.info(f"Uploading {len(file_content)} bytes to Cloudinary as {folder_path}")
+
                 response = cloudinary.uploader.upload(
-                    file_content, 
+                    file_obj, 
                     public_id=folder_path,
-                    resource_type="auto"
+                    resource_type="video" # Audio is treated as video in Cloudinary
                 )
                 return response.get('secure_url')
                 
