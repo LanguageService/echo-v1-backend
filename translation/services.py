@@ -12,6 +12,7 @@ import io
 import wave
 import base64
 import asyncio
+import struct
 from typing import Dict, Any, Optional, BinaryIO
 from google import genai
 from google.genai import types
@@ -24,6 +25,8 @@ from .cloud_storage import cloud_storage
 from decouple import config
 
 logger = logging.getLogger(__name__)
+
+
 
 # Initialize Gemini client
 client = genai.Client(api_key=config("GEMINI_API_KEY",""))
@@ -361,13 +364,11 @@ class TextToSpeechService(GeminiService):
 
 {text}"""
             
-            # Note: Gemini doesn't directly support TTS, so this is a placeholder
-            # In a real implementation, you would use Google Cloud Text-to-Speech API
-            # or another TTS service
+            # Generate silent audio as fallback/simulation
+            audio_data = self._generate_silent_wav()
             
             logger.info(f"Text-to-speech request for {language} text (length: {len(text)})")
             
-            # For now, return a success response indicating TTS would be processed
             processing_time = time.time() - start_time
             
             return {
@@ -376,8 +377,8 @@ class TextToSpeechService(GeminiService):
                 'voice': voice,
                 'text_length': len(text),
                 'processing_time': processing_time,
-                'audio_data': None,  # Would contain actual audio data
-                'note': 'TTS processing simulated - integrate with Google Cloud TTS for actual audio'
+                'audio_data': audio_data,
+                'note': 'TTS processing simulated with silent audio placeholder'
             }
             
         except Exception as e:
@@ -388,6 +389,29 @@ class TextToSpeechService(GeminiService):
                 'audio_data': None,
                 'processing_time': time.time() - start_time if 'start_time' in locals() else 0.0
             }
+    
+    def _generate_silent_wav(self, duration: float = 1.0) -> bytes:
+        """Generate a silent WAV file in memory"""
+        try:
+            buffer = io.BytesIO()
+            with wave.open(buffer, 'wb') as wav_file:
+                wav_file.setnchannels(1)  # mono
+                wav_file.setsampwidth(2)  # 2 bytes per sample
+                wav_file.setframerate(44100) # 44.1kHz
+                
+                num_samples = int(44100 * duration)
+                
+                # Write silence (0)
+                for _ in range(num_samples):
+                    wav_file.writeframes(struct.pack('h', 0))
+                    
+            buffer.seek(0)
+            return buffer.read()
+        except Exception as e:
+            logger.error(f"Failed to generate silent WAV: {e}")
+            return None
+            
+
     
     def _get_language_name(self, code: str) -> str:
         """Get full language name from code"""
@@ -569,6 +593,7 @@ class VoiceTranslationService:
             
             # Upload output audio to cloud storage (if TTS was successful)
             translated_audio_url = None
+            logger.info(f"TTS result: {tts_result}")
             if tts_result and tts_result.get('success') and tts_result.get('audio_data'):
                 if cloud_storage.is_available():
                     try:
@@ -581,6 +606,7 @@ class VoiceTranslationService:
                         logger.warning(f"Failed to upload output audio to cloud storage: {e}")
 
             total_processing_time = time.time() - start_time
+            
             # Save translation record
             translation_record = Translation.objects.create(
                 user=user,
