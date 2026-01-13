@@ -571,12 +571,12 @@ class VoiceTranslationService:
             
             # Step 3: Text to Speech (optional)
             tts_result = None
-            if settings :
-                logger.info("Starting text-to-speech synthesis...")
-                voice = settings.voice if settings else 'Zephyr'
-                tts_result = self.tts_service.synthesize_speech(
-                    translated_text, target_language, voice
-                )
+            # if settings :
+            logger.info("Starting text-to-speech synthesis...")
+            voice = settings.voice if settings else 'Zephyr'
+            tts_result = self.tts_service.synthesize_speech(
+                translated_text, target_language, voice
+            )
             
             # Upload input audio to cloud storage
             original_audio_url = None
