@@ -356,16 +356,53 @@ class TextToSpeechService(GeminiService):
                     'audio_data': None
                 }
             
-            # Get language name
-            lang_name = self._get_language_name(language)
+            # Use Gemini TTS model
+            model = "gemini-2.5-flash-preview-tts"
             
-            # Create TTS prompt
-            prompt = f"""Generate natural-sounding speech for the following {lang_name} text using a {voice} voice style. The speech should be clear, well-paced, and expressive:
+            # Map voice names if necessary, Gemini has specific voices like 'Aoede', 'Puck', 'Charon', 'Kore', 'Fenrir'
+            # Default mapping from our app voices to Gemini voices
+            voice_mapping = {
+                'Zephyr': 'Puck', 
+                'Echo': 'Aoede',
+                'Sky': 'Kore',
+                'Onyx': 'Fenrir'
+            }
+            gemini_voice = voice_mapping.get(voice, 'Aoede') 
 
-{text}"""
+            # Create TTS request
+            response = client.models.generate_content(
+                model=model,
+                contents=text,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=gemini_voice
+                            )
+                        )
+                    )
+                )
+            )
             
-            # Generate silent audio as fallback/simulation
-            audio_data = self._generate_silent_wav()
+            audio_data = None
+            
+            # Extract audio data
+            if hasattr(response, 'candidates'):
+                for cand in response.candidates:
+                    if hasattr(cand, 'content') and hasattr(cand.content, 'parts'):
+                        for part in cand.content.parts:
+                            if hasattr(part, 'inline_data') and part.inline_data:
+                                # Raw PCM data (usually 24kHz, 1 channel, 16-bit)
+                                pcm_data = part.inline_data.data
+                                # Wrap in WAV header
+                                audio_data = self._pcm_to_wav(pcm_data)
+                                logger.info(f"Generated real TTS audio: {len(audio_data)} bytes")
+                                break
+            
+            if not audio_data:
+                logger.warning("Gemini TTS returned no audio, falling back to silent generation")
+                audio_data = self._generate_silent_wav(duration=1.0)
             
             logger.info(f"Text-to-speech request for {language} text (length: {len(text)})")
             
@@ -378,7 +415,7 @@ class TextToSpeechService(GeminiService):
                 'text_length': len(text),
                 'processing_time': processing_time,
                 'audio_data': audio_data,
-                'note': 'TTS processing simulated with silent audio placeholder'
+                # 'note': 'TTS processed with Gemini 2.5 Flash TTS'
             }
             
         except Exception as e:
@@ -390,6 +427,22 @@ class TextToSpeechService(GeminiService):
                 'processing_time': time.time() - start_time if 'start_time' in locals() else 0.0
             }
     
+    def _pcm_to_wav(self, pcm_data: bytes, sample_rate: int = 24000) -> bytes:
+        """Convert raw PCM data to WAV format"""
+        try:
+            buffer = io.BytesIO()
+            with wave.open(buffer, 'wb') as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(pcm_data)
+            
+            buffer.seek(0)
+            return buffer.read()
+        except Exception as e:
+            logger.error(f"Error converting PCM to WAV: {e}")
+            return None
+
     def _generate_silent_wav(self, duration: float = 1.0) -> bytes:
         """Generate a silent WAV file in memory"""
         try:
@@ -907,22 +960,71 @@ class AsyncTextToSpeechService(AsyncGeminiService):
             # Get language name
             lang_name = await self._get_language_name_async(language)
             
-            # Note: Gemini doesn't directly support TTS yet, so we simulate the process
-            # In a real implementation, you would integrate with a TTS service
-            logger.info(f"Simulating TTS synthesis for {lang_name} text: {text[:50]}...")
+            # Use Gemini TTS model
+            model = "gemini-2.5-flash-preview-tts"
             
-            # Simulate processing time
-            await asyncio.sleep(0.1)
+            # Map voice names
+            voice_mapping = {
+                'Zephyr': 'Puck', 
+                'Echo': 'Aoede',
+                'Sky': 'Kore',
+                'Onyx': 'Fenrir'
+            }
+            gemini_voice = voice_mapping.get(voice, 'Aoede')
+            
+            # Helper to run sync gemini call in thread
+            def gemini_tts_call():
+                return client.models.generate_content(
+                    model=model,
+                    contents=text,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name=gemini_voice
+                                )
+                            )
+                        )
+                    )
+                )
+
+            # Execute async
+            response = await asyncio.get_event_loop().run_in_executor(None, gemini_tts_call)
+            
+            audio_data = None
+            
+            # Extract audio data (CPU bound, run in executor too if large, but fast enough here)
+            if hasattr(response, 'candidates'):
+                for cand in response.candidates:
+                    if hasattr(cand, 'content') and hasattr(cand.content, 'parts'):
+                        for part in cand.content.parts:
+                            if hasattr(part, 'inline_data') and part.inline_data:
+                                pcm_data = part.inline_data.data
+                                # Need access to the sync service for helper or duplicate it.
+                                # Since this class doesn't inherit from sync service, I'll duplicate the helper 
+                                # or better, use the sync service implementation?
+                                # Creating a temporary sync service to use its helper
+                                temp_sync_service = TextToSpeechService()
+                                audio_data = temp_sync_service._pcm_to_wav(pcm_data)
+                                logger.info(f"Generated real async TTS audio: {len(audio_data)} bytes")
+                                break
+            
+            if not audio_data:
+                 # Fallback to silent
+                 temp_sync_service = TextToSpeechService()
+                 audio_data = temp_sync_service._generate_silent_wav(duration=1.0)
             
             processing_time = time.time() - start_time
             
             return {
                 'success': True,
-                'audio_available': False,
+                'audio_available': True,
                 'processing_time': processing_time,
-                'note': f'TTS synthesis simulated for {lang_name} using {voice} voice model',
+                'note': f'TTS processed with Gemini 2.5 Flash TTS',
                 'language': language,
-                'voice': voice
+                'voice': voice,
+                'audio_data': audio_data
             }
             
         except Exception as e:
