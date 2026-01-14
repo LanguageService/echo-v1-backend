@@ -250,9 +250,14 @@ class CloudStorageService:
                 
                 logger.info(f"Uploading {len(file_content)} bytes to Cloudinary as {folder_path}")
 
+                # Cloudinary may add extension to URL, so strip it from public_id to avoid double extension
+                public_id = folder_path
+                if public_id.lower().endswith('.wav'):
+                    public_id = public_id[:-4]
+                
                 response = cloudinary.uploader.upload(
                     file_obj, 
-                    public_id=folder_path,
+                    public_id=public_id,
                     resource_type="video" # Audio is treated as video in Cloudinary
                 )
                 return response.get('secure_url')
