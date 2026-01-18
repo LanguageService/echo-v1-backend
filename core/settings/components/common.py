@@ -261,6 +261,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:5000',
     'https://*.replit.dev',
     'https://echo-v1-backend-sh6i.onrender.com',
+    "https://letusecho.vercel.app",  # Frontend Local
 ]
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access for SPA
@@ -283,6 +284,7 @@ CORS_ALLOWED_ORIGINS = [
    "https://app.echo.com",  # Frontend Prod
    "http://app.echo.com",  # Frontend Prod
    "http://localhost:3000",  # Frontend Local
+   "https://letusecho.vercel.app",  # Frontend Local
 
 
 ]
