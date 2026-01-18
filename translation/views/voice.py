@@ -24,6 +24,7 @@ from ..serializers import (
     VoiceTranslationRequestSerializer, VoiceTranslationResponseSerializer, TranslationHistorySerializer,
 )
 from ..services import VoiceTranslationService, AsyncVoiceTranslationService
+from ..models import Translation
 
 
 logger = logging.getLogger(__name__)
