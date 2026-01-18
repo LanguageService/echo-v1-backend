@@ -56,7 +56,7 @@ class TranslationSerializer(serializers.ModelSerializer):
             'original_language_name', 'target_language_name', 'original_audio_url',
             'translated_audio_url', 'confidence_score',
             'total_processing_time', 'session_id', 'date_created', 'last_modified',
-            'audio_files'
+            'audio_files', 'feature_type'
         ]
         read_only_fields = ['id', 'created_at', 'last_modified']
     

@@ -21,6 +21,7 @@ from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.conf import settings
 from .models import Translation, UserSettings, AudioFile, LanguageSupport
+from .choices import FeatureType
 from .cloud_storage import cloud_storage
 from decouple import config
 
@@ -676,7 +677,8 @@ class VoiceTranslationService:
                 audio_format=audio_format,
                 confidence_score=stt_result['confidence'],
                 total_processing_time=total_processing_time,
-                session_id=session_id
+                session_id=session_id,
+                feature_type=FeatureType.SPEECH_TRANSLATION
             )
 
             # Save processing times

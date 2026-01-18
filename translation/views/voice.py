@@ -25,6 +25,7 @@ from ..serializers import (
 )
 from ..services import VoiceTranslationService, AsyncVoiceTranslationService
 from ..models import Translation
+from ..choices import FeatureType
 
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,11 @@ class TranslationHistoryAPIView(APIView):
             params = query_serializer.validated_data
             
             # Build queryset for authenticated user
-            queryset = Translation.objects.filter(user=request.user, user__isnull=False)
+            queryset = Translation.objects.filter(
+                user=request.user, 
+                user__isnull=False,
+                feature_type=FeatureType.SPEECH_TRANSLATION
+            )
             
             # Apply filters
             if params.get('session_id'):
@@ -445,7 +450,12 @@ class AsyncTranslationHistoryAPIView(APIView):
             from django.db.models import Q
             
             # Start with base queryset
-            queryset = Translation.objects.filter(user=request.user, user__isnull=False)
+            # Start with base queryset
+            queryset = Translation.objects.filter(
+                user=request.user, 
+                user__isnull=False,
+                feature_type=FeatureType.SPEECH_TRANSLATION
+            )
             
             # Apply filters
             if params.get('session_id'):

@@ -74,6 +74,7 @@ urlpatterns = [
     path('api/v1/image/', include('ocr_app.urls')),
     path('api/v1/voice/', include('translation.urls.voice')),
     path('api/v1/text/', include('translation.urls.text')),
+    path('api/v1/translations/recent/', include('translation.urls.general')),
 
     
     # Statistics

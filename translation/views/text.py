@@ -25,6 +25,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExampl
 from drf_spectacular.types import OpenApiTypes
 
 from ..models import Translation, UserSettings, LanguageSupport
+from ..choices import FeatureType
 from ..serializers import (
     TranslationSerializer, UserSettingsSerializer, LanguageSupportSerializer,
     VoiceTranslationRequestSerializer, VoiceTranslationResponseSerializer, TranslationHistorySerializer,
@@ -51,7 +52,7 @@ class TextTranslationViewSet(ModelViewSet):
         """
         return Translation.objects.filter(
             user=self.request.user,
-            feature_type='TEXT_TRANSLATION'
+            feature_type=FeatureType.TEXT_TRANSLATION
         )
 
     @extend_schema(
@@ -110,7 +111,7 @@ class TextTranslationViewSet(ModelViewSet):
             original_language=detected_language,
             target_language=target_language,
             total_processing_time=processing_time,
-            feature_type='TEXT_TRANSLATION'
+            feature_type=FeatureType.TEXT_TRANSLATION
         )
 
         response_serializer = TranslationSerializer(translation_record, context={'request': request})
