@@ -26,3 +26,5 @@ proxie/staticfiles/
 venv/
 
 core/settings/environments/local.py
+.archiver_shadow/
+.snapshots/

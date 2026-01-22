@@ -70,11 +70,7 @@ class AuthViewSet(GenericViewSet):
                 try:
                     user = User.objects.get(email=request.data.get('email'))
                     otp = self.send_activation_mail(user) if not user.is_verified else None
-                    data = {
-                        'is_verified': user.is_verified,
-                        'otp': otp  # TODO: remove
-                    }
-                    return error_400("User already exist", data)
+                    return error_400("User already exist")
                 except User.DoesNotExist:
                     # This is unlikely but handles a race condition.
                     return error_400(serializer_errors(errors))
@@ -91,7 +87,6 @@ class AuthViewSet(GenericViewSet):
                 "message": "User created successfully, Check email for verification code",
                 "data": {
                     "token": user.token(),
-                    "otp": otp,  # This is temporary still we have email or sms service up
                     "user": user_data
                 }
             }
@@ -217,7 +212,6 @@ class AuthViewSet(GenericViewSet):
         if serializer.is_valid():
             email = serializer.validated_data["email"]
             otp_code = serializer.validated_data["otp_code"]
-            print(f"email: {email}")
             success, msg = models.OneTimePassword.activate_user(token=otp_code,email=email)
             if not success:
                 return error_400(msg)
