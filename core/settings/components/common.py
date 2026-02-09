@@ -260,7 +260,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5000',
     'http://127.0.0.1:5000',
     'https://*.replit.dev',
-    'https://echo-v1-backend-sh6i.onrender.com',
+    'https://echo-backend-uiei.onrender.com',
     "https://letusecho.vercel.app",  # Frontend Local
 ]
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
