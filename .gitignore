@@ -17,11 +17,11 @@ db.sqlite3
 staticfiles
 staticfiles/
 */staticfiles/
-proxie/staticfiles/
+core/staticfiles/
 
 .idea
 .env
-*pyc
+*.pyc
 .venv
 venv/
 .pdf
@@ -37,3 +37,5 @@ ebook-test/*
 db.sqlite3
 
 core/media/*
+
+core/__pycache__/*
