@@ -4,13 +4,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 
-from ..models import Translation
-from ..serializers import TranslationSerializer, TranslationHistorySerializer
+from translation.models import TextTranslation, SpeechTranslation, ImageTranslation
+from translation.serializers import UnifiedTranslationSerializer
 import logging
 
 logger = logging.getLogger(__name__)
 
-@extend_schema(tags=["General Translation History"])
+@extend_schema(tags=["Translation History"])
 class GeneralTranslationHistoryAPIView(APIView):
     """Endpoint for retrieving all translation history (Voice and Text)"""
     
@@ -24,7 +24,7 @@ class GeneralTranslationHistoryAPIView(APIView):
             OpenApiParameter(name='offset', description='Pagination offset', type=int),
         ],
         responses={
-            200: TranslationSerializer(many=True),
+            200: UnifiedTranslationSerializer(many=True),
             400: OpenApiResponse(description='Invalid query parameters'),
             401: OpenApiResponse(description='Authentication required'),
             500: OpenApiResponse(description='Internal server error')
@@ -37,17 +37,27 @@ class GeneralTranslationHistoryAPIView(APIView):
             limit = int(request.query_params.get('limit', 20))
             offset = int(request.query_params.get('offset', 0))
             
-            # Build queryset for authenticated user
-            # We want ALL translations for this user, ordered by creation date
-            queryset = Translation.objects.filter(
-                user=request.user
-            ).order_by('-date_created')
+            from itertools import chain
             
-            total_count = queryset.count()
-            translations = queryset[offset:offset + limit]
+            # Build querysets for authenticated user across all translation types
+            text_qs = TextTranslation.objects.filter(user=request.user)
+            speech_qs = SpeechTranslation.objects.filter(user=request.user)
+            image_qs = ImageTranslation.objects.filter(user=request.user)
             
-            # Serialize results
-            serializer = TranslationSerializer(translations, many=True, context={'request': request})
+            # Combine and sort by date_created (reverse)
+            # Note: For large datasets, we might want a different approach (like a union or separate endpoints),
+            # but for history this combined list is what's expected.
+            all_translations = sorted(
+                chain(text_qs, speech_qs, image_qs),
+                key=lambda x: x.date_created,
+                reverse=True
+            )
+            
+            total_count = len(all_translations)
+            translations = all_translations[offset:offset + limit]
+            
+            # Serialize results using the Unified serializer
+            serializer = UnifiedTranslationSerializer(translations, many=True, context={'request': request})
             
             return Response({
                 'count': total_count,

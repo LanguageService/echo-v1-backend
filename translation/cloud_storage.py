@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional, Tuple
 from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
-from .models import CloudStorageConfig
+# from .models import CloudStorageConfig
 from decouple import config
 import cloudinary
 import cloudinary.uploader
@@ -25,14 +25,14 @@ class CloudStorageService:
     """Service for handling cloud storage operations"""
     
     def __init__(self):
-        self.config = self._get_active_config()
+        self.config = None
         self.client = None
-        if self.config:
-            self._initialize_client()
+        # Deferred initialization to allow importing without Django setup
     
-    def _get_active_config(self) -> Optional[CloudStorageConfig]:
+    def _get_active_config(self):
         """Get the active cloud storage configuration"""
         try:
+            from .models import CloudStorageConfig
             return CloudStorageConfig.objects.filter(is_active=True).first()
         except Exception as e:
             logger.error(f"Failed to get cloud storage config: {e}")
@@ -115,6 +115,10 @@ class CloudStorageService:
     
     def is_available(self) -> bool:
         """Check if cloud storage is properly configured and available"""
+        if self.config is None:
+            self.config = self._get_active_config()
+            if self.config:
+                self._initialize_client()
         return self.config is not None and self.client is not None
     
     def get_bucket_name(self) -> str:
@@ -186,6 +190,43 @@ class CloudStorageService:
         folder_path = f"translation/image/input/{language}/{filename}"
         
         return self._upload_file(file, folder_path)
+    
+    def upload_document_input_file(self, file: UploadedFile, language: str, user_id: str) -> Optional[str]:
+        """
+        Upload document input file to cloud storage
+        Path: translation/document/input/{language}/{user_id}_{timestamp}_{uuid}.{ext}
+        """
+        if not self.is_available():
+            logger.warning("Cloud storage not available")
+            return None
+            
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        file_extension = file.name.split('.')[-1] if '.' in file.name else 'doc'
+        filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
+        folder_path = f"translation/document/input/{language}/{filename}"
+        
+        return self._upload_file(file, folder_path)
+
+    def upload_document_output_file(self, file_path: str, language: str, user_id: str, file_format: str) -> Optional[str]:
+        """
+        Upload document output file to cloud storage
+        Path: translation/document/output/{language}/{user_id}_{timestamp}_{uuid}.{ext}
+        """
+        if not self.is_available():
+            logger.warning("Cloud storage not available")
+            return None
+            
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
+        folder_path = f"translation/document/output/{language}/{filename}"
+        
+        with open(file_path, 'rb') as f:
+            from django.core.files.base import ContentFile
+            content_file = ContentFile(f.read(), name=filename)
+            # Determine content type
+            content_type = 'application/pdf' if file_format.lower() == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            content_file.content_type = content_type
+            return self._upload_file(content_file, folder_path)
     
     def _upload_file(self, file: UploadedFile, folder_path: str) -> Optional[str]:
         """Upload a Django UploadedFile to cloud storage"""

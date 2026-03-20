@@ -24,7 +24,16 @@ proxie/staticfiles/
 *pyc
 .venv
 venv/
+.pdf
 
 core/settings/environments/local.py
 .archiver_shadow/
 .snapshots/
+
+
+
+ebook-test/*
+
+db.sqlite3
+
+core/media/*

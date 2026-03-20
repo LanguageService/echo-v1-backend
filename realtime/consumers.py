@@ -102,6 +102,7 @@ class OCRConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps(event['data']))
 
 
+
 class VoiceConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope["user"]
@@ -138,53 +139,72 @@ class VoiceConsumer(AsyncWebsocketConsumer):
             }))
 
     async def process_voice_request(self, data):
-        """Handle voice processing with progress updates"""
+        """Handle voice processing with orchestral service"""
+        import base64
+        import io
+        from asgiref.sync import sync_to_async
+        from translation.orchestrator import TranslationOrchestrator
+        
         try:
-            # Step 1: Audio preprocessing
+            # 1. Validation and Setup
+            audio_base64 = data.get('audio')
+            target_lang = data.get('target_language', 'en')
+            source_lang = data.get('source_language', 'auto')
+            
+            if not audio_base64:
+                raise Exception("No audio data provided")
+
             await self.send(text_data=json.dumps({
                 'type': 'progress',
-                'step': 'audio_processing',
+                'step': 'preprocessing',
                 'progress': 20,
-                'message': 'Processing audio...'
+                'message': 'Decoding audio...'
             }))
             
-            # Step 2: Speech to text
+            # 2. Decode audio
+            audio_bytes = base64.b64decode(audio_base64)
+            audio_io = io.BytesIO(audio_bytes)
+            
+            # 3. Call Orchestrator (Sync to Async)
+            orchestrator = TranslationOrchestrator()
+            
             await self.send(text_data=json.dumps({
                 'type': 'progress',
-                'step': 'speech_to_text',
-                'progress': 40,
-                'message': 'Converting speech to text...'
+                'step': 'processing',
+                'progress': 50,
+                'message': 'Processing translation...'
             }))
             
-            # Step 3: Translation
-            await self.send(text_data=json.dumps({
-                'type': 'progress',
-                'step': 'translation',
-                'progress': 70,
-                'message': 'Translating text...'
-            }))
+            # Use sync_to_async since orchestrator is currently synchronous
+            # We wrap it to be able to use it in this async consumer
+            def run_orchestrator():
+                return orchestrator.translate_speech(
+                    user=self.user,
+                    audio_file=audio_io,
+                    target_lang=target_lang,
+                    source_lang=source_lang,
+                    mode='SHORT'
+                )
             
-            # Step 4: Text to speech
-            await self.send(text_data=json.dumps({
-                'type': 'progress',
-                'step': 'text_to_speech',
-                'progress': 90,
-                'message': 'Generating audio...'
-            }))
+            result = await sync_to_async(run_orchestrator)()
             
-            # Final result
-            await self.send(text_data=json.dumps({
-                'type': 'complete',
-                'progress': 100,
-                'result': {
-                    'original_text': 'Hello world',
-                    'translated_text': 'Hola mundo',
-                    'source_language': 'en',
-                    'target_language': 'es',
-                    'audio_url': '/media/generated_audio.mp3'
-                }
-            }))
-            
+            if result['success']:
+                # Final result
+                await self.send(text_data=json.dumps({
+                    'type': 'complete',
+                    'progress': 100,
+                    'result': {
+                        'translation_id': result.get('translation_id'),
+                        'original_text': result.get('transcript'),
+                        'translated_text': result.get('translation'),
+                        'source_language': source_lang,
+                        'target_language': target_lang,
+                        'audio_url': result.get('translated_audio_url')
+                    }
+                }))
+            else:
+                raise Exception(result.get('error', 'Processing failed'))
+                
         except Exception as e:
             await self.send(text_data=json.dumps({
                 'type': 'error',
@@ -196,6 +216,7 @@ class VoiceConsumer(AsyncWebsocketConsumer):
 
     async def processing_complete(self, event):
         await self.send(text_data=json.dumps(event['data']))
+
 
 
 class ProcessingConsumer(AsyncWebsocketConsumer):

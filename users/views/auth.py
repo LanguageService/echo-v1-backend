@@ -6,7 +6,7 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
 from drf_spectacular.utils import extend_schema
 
@@ -25,6 +25,7 @@ class HealthCheckView(GenericAPIView):
         return Response(status=status.HTTP_200_OK)
 
 
+@extend_schema(tags=["Auth"])
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = serializers.LoginSerializer
 
@@ -38,6 +39,14 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         except Exception as e:
             # Handle other potential exceptions
             return error_400(str(e))
+
+
+@extend_schema(tags=["Auth"])
+class CustomTokenRefreshView(TokenRefreshView):
+    """
+    Custom Token Refresh View tagged for Auth category
+    """
+    pass
 
 
 @extend_schema(tags=["Auth"])

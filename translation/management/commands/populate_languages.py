@@ -10,68 +10,98 @@ class Command(BaseCommand):
     help = 'Populate supported languages in the database'
     
     def handle(self, *args, **options):
-        """Populate the database with supported languages"""
+        """Populate the database with regional priority languages"""
         
-        languages = [
+        # 0. Reset all existing languages to False for all support fields
+        self.stdout.write('Resetting all language support flags to False...')
+        LanguageSupport.objects.all().update(
+            speech_to_text_supported=False,
+            text_to_speech_supported=False,
+            text_to_text_supported=False,
+            speech_to_speech_translation_supported=False,
+            image_translation_supported=False,
+            document_translation_supported=False
+        )
+        
+        # Priority languages: All Boolean flags set to True
+        priority_langs = [
+            ('en', 'English', 'English', '🇺🇸', False),
+            ('sw', 'Swahili', 'Kiswahili', '🇰🇪', True),
+            ('rw', 'Kinyarwanda', 'Ikinyarwanda', '🇷🇼', True),
+            ('yo', 'Yoruba', 'Yorùbá', '🇳🇬', True),
+            ('ha', 'Hausa', 'Hausa', '🇳🇬', True),
+            ('ig', 'Igbo', 'Igbo', '🇳🇬', True),
+        ]
+        
+        # All other languages will be set to False for support fields
+        all_langs = [
             # Major world languages
-            ('en', 'English', 'English', '🇺🇸', True, True, True, False),
-            ('es', 'Spanish', 'Español', '🇪🇸', True, True, True, False),
-            ('fr', 'French', 'Français', '🇫🇷', True, True, True, False),
-            ('de', 'German', 'Deutsch', '🇩🇪', True, True, True, False),
-            ('zh', 'Chinese', '中文', '🇨🇳', True, True, True, False),
-            ('ja', 'Japanese', '日本語', '🇯🇵', True, True, True, False),
-            ('ko', 'Korean', '한국어', '🇰🇷', True, True, True, False),
-            ('ar', 'Arabic', 'العربية', '🇸🇦', True, True, True, False),
-            ('hi', 'Hindi', 'हिन्दी', '🇮🇳', True, True, True, False),
-            ('pt', 'Portuguese', 'Português', '🇵🇹', True, True, True, False),
-            ('ru', 'Russian', 'Русский', '🇷🇺', True, True, True, False),
-            ('it', 'Italian', 'Italiano', '🇮🇹', True, True, True, False),
+            ('es', 'Spanish', 'Español', '🇪🇸', False),
+            ('fr', 'French', 'Français', '🇫🇷', False),
+            ('de', 'German', 'Deutsch', '🇩🇪', False),
+            ('zh', 'Chinese', '中文', '🇨🇳', False),
+            ('ja', 'Japanese', '日本語', '🇯🇵', False),
+            ('ko', 'Korean', '한국어', '🇰🇷', False),
+            ('ar', 'Arabic', 'العربية', '🇸🇦', False),
+            ('hi', 'Hindi', 'हिन्दी', '🇮🇳', False),
+            ('pt', 'Portuguese', 'Português', '🇵🇹', False),
+            ('ru', 'Russian', 'Русский', '🇷🇺', False),
+            ('it', 'Italian', 'Italiano', '🇮🇹', False),
             
-            # African languages
-            ('rw', 'Kinyarwanda', 'Ikinyarwanda', '🇷🇼', True, True, True, True),
-            ('sw', 'Swahili', 'Kiswahili', '🇰🇪', True, True, True, True),
-            ('am', 'Amharic', 'አማርኛ', '🇪🇹', True, True, True, True),
-            ('yo', 'Yoruba', 'Yorùbá', '🇳🇬', True, True, True, True),
-            ('ha', 'Hausa', 'Hausa', '🇳🇬', True, True, True, True),
-            ('ig', 'Igbo', 'Igbo', '🇳🇬', True, True, True, True),
-            ('zu', 'Zulu', 'isiZulu', '🇿🇦', True, True, True, True),
-            ('xh', 'Xhosa', 'isiXhosa', '🇿🇦', True, True, True, True),
-            ('af', 'Afrikaans', 'Afrikaans', '🇿🇦', True, True, True, True),
-            ('so', 'Somali', 'Soomaali', '🇸🇴', True, True, True, True),
+            # Other African languages
+            ('am', 'Amharic', 'አማርኛ', '🇪🇹', True),
+            ('zu', 'Zulu', 'isiZulu', '🇿🇦', True),
+            ('xh', 'Xhosa', 'isiXhosa', '🇿🇦', True),
+            ('af', 'Afrikaans', 'Afrikaans', '🇿🇦', True),
+            ('so', 'Somali', 'Soomaali', '🇸🇴', True),
         ]
         
         created_count = 0
         updated_count = 0
         
-        for code, name, native_name, flag, stt, tts, trans, african in languages:
-            language, created = LanguageSupport.objects.get_or_create(
+        # 1. Process Priority Languages
+        for code, name, native_name, flag, african in priority_langs:
+            lang, created = LanguageSupport.objects.update_or_create(
                 code=code,
                 defaults={
                     'name': name,
                     'native_name': native_name,
                     'flag_emoji': flag,
-                    'speech_to_text_supported': stt,
-                    'text_to_speech_supported': tts,
-                    'translation_supported': trans,
+                    'speech_to_text_supported': True,
+                    'text_to_speech_supported': True,
+                    'text_to_text_supported': True,
+                    'speech_to_speech_translation_supported': True,
+                    'image_translation_supported': True,
+                    'document_translation_supported': True,
                     'is_african_language': african,
                 }
             )
-            
-            if created:
+            if created: created_count += 1
+            else: updated_count += 1
+            self.stdout.write(f'Enabled all services for: {name} ({code})')
+
+        # 2. Process Other Languages (Disabled by default)
+        for code, name, native_name, flag, african in all_langs:
+            lang, created = LanguageSupport.objects.update_or_create(
+                code=code,
+                defaults={
+                    'name': name,
+                    'native_name': native_name,
+                    'flag_emoji': flag,
+                    'speech_to_text_supported': False,
+                    'text_to_speech_supported': False,
+                    'text_to_text_supported': False,
+                    'speech_to_speech_translation_supported': False,
+                    'image_translation_supported': False,
+                    'document_translation_supported': False,
+                    'is_african_language': african,
+                }
+            )
+            if created: 
                 created_count += 1
-                self.stdout.write(f'Created language: {name} ({code})')
-            else:
-                # Update existing language
-                language.name = name
-                language.native_name = native_name
-                language.flag_emoji = flag
-                language.speech_to_text_supported = stt
-                language.text_to_speech_supported = tts
-                language.translation_supported = trans
-                language.is_african_language = african
-                language.save()
+            else: 
                 updated_count += 1
-                self.stdout.write(f'Updated language: {name} ({code})')
+            self.stdout.write(f'Disabled all services for: {name} ({code})')
         
         self.stdout.write(
             self.style.SUCCESS(

@@ -5,35 +5,51 @@ Django admin interface for managing voice translation models.
 """
 
 from django.contrib import admin
-from .models import Translation, UserSettings, AudioFile, LanguageSupport, CloudStorageConfig
-import os
+from .models import (
+    TextTranslation, SpeechTranslation, ImageTranslation, 
+    UserSettings, AudioFile, LanguageSupport, CloudStorageConfig,
+    LLMLog, SpeechTranslationProcessingTime
+)
 
-@admin.register(Translation)
-class TranslationAdmin(admin.ModelAdmin):
-    """Admin interface for Translation model"""
-    
+@admin.register(TextTranslation)
+class TextTranslationAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'original_language', 'target_language', 
-        'original_text_preview', 'translated_text_preview',
-        'confidence_score', 'total_processing_time', 'session_id', 'date_created'
+        'id', 'title', 'original_language', 'target_language', 
+        'status', 'mode', 'is_sms', 'date_created'
     ]
-    list_filter = [
-        'original_language', 'target_language', 'date_created'
-    ]
-    search_fields = [
-        'original_text', 'translated_text', 'session_id'
-    ]
+    list_filter = ['status', 'mode', 'is_sms', 'original_language', 'target_language', 'date_created']
+    search_fields = ['id', 'title', 'original_text', 'translated_text']
     readonly_fields = ['id', 'date_created', 'last_modified']
     ordering = ['-date_created']
-    list_per_page = 25
-    
-    def original_text_preview(self, obj):
-        return obj.original_text[:50] + '...' if len(obj.original_text) > 50 else obj.original_text
-    original_text_preview.short_description = 'Original Text'
-    
-    def translated_text_preview(self, obj):
-        return obj.translated_text[:50] + '...' if len(obj.translated_text) > 50 else obj.translated_text
-    translated_text_preview.short_description = 'Translated Text'
+
+@admin.register(SpeechTranslation)
+class SpeechTranslationAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'title', 'speech_service', 'original_language', 'target_language', 
+        'status', 'mode', 'date_created'
+    ]
+    list_filter = ['speech_service', 'status', 'mode', 'original_language', 'target_language', 'date_created']
+    search_fields = ['id', 'title', 'original_text', 'translated_text']
+    readonly_fields = ['id', 'date_created', 'last_modified']
+    ordering = ['-date_created']
+
+@admin.register(ImageTranslation)
+class ImageTranslationAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'title', 'original_language', 'target_language', 
+        'status', 'date_created'
+    ]
+    list_filter = ['status', 'original_language', 'target_language', 'date_created']
+    search_fields = ['id', 'title', 'ocr_text', 'translated_text']
+    readonly_fields = ['id', 'date_created', 'last_modified']
+    ordering = ['-date_created']
+
+@admin.register(LLMLog)
+class LLMLogAdmin(admin.ModelAdmin):
+    list_display = ['id', 'provider', 'model_name', 'function_performed', 'total_tokens', 'status', 'created_at']
+    list_filter = ['provider', 'model_name', 'function_performed', 'status', 'created_at']
+    search_fields = ['id', 'error_message']
+    readonly_fields = ['created_at']
 
 
 @admin.register(UserSettings)
@@ -75,12 +91,16 @@ class LanguageSupportAdmin(admin.ModelAdmin):
     
     list_display = [
         'code', 'name', 'native_name', 'flag_emoji',
+        'is_african_language',
         'speech_to_text_supported', 'text_to_speech_supported',
-        'translation_supported', 'is_african_language'
+        'text_to_text_supported', 'speech_to_speech_translation_supported',
+        'image_translation_supported', 'document_translation_supported'
     ]
     list_filter = [
+        'is_african_language',
         'speech_to_text_supported', 'text_to_speech_supported',
-        'translation_supported', 'is_african_language'
+        'text_to_text_supported', 'speech_to_speech_translation_supported',
+        'image_translation_supported', 'document_translation_supported'
     ]
     search_fields = ['code', 'name', 'native_name']
     ordering = ['name']
@@ -92,7 +112,10 @@ class LanguageSupportAdmin(admin.ModelAdmin):
         queryset.update(
             speech_to_text_supported=True,
             text_to_speech_supported=True,
-            translation_supported=True
+            text_to_text_supported=True,
+            speech_to_speech_translation_supported=True,
+            image_translation_supported=True,
+            document_translation_supported=True
         )
         self.message_user(request, f'Enabled all features for {queryset.count()} languages.')
     enable_all_features.short_description = "Enable all features for selected languages"
@@ -102,6 +125,13 @@ class LanguageSupportAdmin(admin.ModelAdmin):
         queryset.update(text_to_speech_supported=False)
         self.message_user(request, f'Disabled TTS for {queryset.count()} languages.')
     disable_tts.short_description = "Disable text-to-speech for selected languages"
+
+
+@admin.register(SpeechTranslationProcessingTime)
+class SpeechTranslationProcessingTimeAdmin(admin.ModelAdmin):
+    list_display = ['id', 'translation', 'speech_to_text', 'text_to_text', 'text_to_speech', 'total']
+    list_filter = ['translation__speech_service', 'date_created']
+    readonly_fields = ['id', 'date_created', 'last_modified']
 
 
 @admin.register(CloudStorageConfig)

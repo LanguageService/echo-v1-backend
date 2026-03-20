@@ -4,16 +4,11 @@ Celery background tasks for heavy processing
 import os
 import time
 import logging
-from celery import Celery
+from typing import Dict, Any, Optional
+from celery import shared_task
 from django.conf import settings
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from typing import Dict, Any, Optional
-
-# Initialize Celery
-app = Celery('core')
-app.config_from_object('django.conf:settings', namespace='CELERY')
-app.autodiscover_tasks()
 
 logger = logging.getLogger(__name__)
 channel_layer = get_channel_layer()
@@ -38,7 +33,7 @@ def send_websocket_update(user_id: int, processing_type: str, data: Dict[str, An
         logger.error(f"Failed to send WebSocket update: {str(e)}")
 
 
-@app.task(bind=True)
+@shared_task(bind=True)
 def process_ocr_background(self, image_path: str, user_id: int, 
                           target_language: str = 'en') -> Dict[str, Any]:
     """Process OCR in background with progress updates"""
@@ -178,7 +173,7 @@ def process_ocr_background(self, image_path: str, user_id: int,
         raise
 
 
-@app.task(bind=True)
+@shared_task(bind=True)
 def process_voice_background(self, audio_path: str, user_id: int,
                            target_language: str = 'en') -> Dict[str, Any]:
     """Process voice translation in background"""
@@ -277,7 +272,7 @@ def process_voice_background(self, audio_path: str, user_id: int,
         raise
 
 
-@app.task
+@shared_task
 def batch_process_images(image_paths: list, user_id: int, target_language: str = 'en'):
     """Process multiple images in batch"""
     results = {}
@@ -313,7 +308,7 @@ def batch_process_images(image_paths: list, user_id: int, target_language: str =
     return results
 
 
-@app.task
+@shared_task
 def cleanup_old_cache():
     """Periodic task to cleanup old cache entries"""
     try:
@@ -330,7 +325,7 @@ def cleanup_old_cache():
         raise
 
 
-@app.task
+@shared_task
 def warm_user_cache(user_id: int, common_translations: list):
     """Pre-warm cache for frequently used translations"""
     try:
@@ -382,11 +377,3 @@ def _mock_text_to_speech(text: str, language: str) -> Dict[str, Any]:
     }
 
 
-# Celery beat schedule for periodic tasks
-app.conf.beat_schedule = {
-    'cleanup-cache': {
-        'task': 'performance.celery_tasks.cleanup_old_cache',
-        'schedule': 3600.0,  # Run every hour
-    },
-}
-app.conf.timezone = 'UTC'

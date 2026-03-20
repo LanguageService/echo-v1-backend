@@ -96,9 +96,9 @@ MIDDLEWARE = [
 
 REST_FRAMEWORK_DEFAULT_AUTH = (
     "rest_framework_simplejwt.authentication.JWTAuthentication",
-    "rest_framework.authentication.SessionAuthentication",
     "rest_framework.authentication.TokenAuthentication",
     "rest_framework.authentication.BasicAuthentication",
+    "rest_framework.authentication.SessionAuthentication",
 )
 
 REST_FRAMEWORK = {
@@ -254,6 +254,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Cors
 # CSRF Settings
 CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8000',
     'http://localhost:4000',
     'http://127.0.0.1:4000',
     'http://0.0.0.0:4000',
@@ -263,6 +264,7 @@ CSRF_TRUSTED_ORIGINS = [
     'https://echo-backend-uiei.onrender.com',
     "https://letusecho.vercel.app",  # Frontend Local
 ]
+
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access for SPA
 CSRF_USE_SESSIONS = False
@@ -433,3 +435,7 @@ MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024
 # OTP Settings
 OTP_EXPIRY_MINUTES = 10
 OTP_LENGTH = 6
+
+
+# Gemini API Settings
+GEMINI_API_KEY = config("GEMINI_API_KEY")

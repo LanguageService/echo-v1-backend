@@ -7,68 +7,95 @@ in the background, improving API responsiveness and handling concurrent requests
 
 import logging
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from celery import shared_task
 from django.contrib.auth import get_user_model
 from .services import AsyncVoiceTranslationService
-from .models import Translation, UserSettings
+from .models import UserSettings
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
-def async_voice_translation_task(self, user_id: int, audio_file_path: str, 
-                                session_id: str = None, target_language: str = 'en') -> Dict[str, Any]:
+def async_voice_translation_task(self, translation_id: str) -> Dict[str, Any]:
     """
-    Background Celery task for voice translation processing
-    
-    Args:
-        self: Celery task instance
-        user_id: User ID for authentication
-        audio_file_path: Path to the audio file
-        session_id: Session ID for grouping translations
-        target_language: Target language for translation
-        
-    Returns:
-        Dictionary with translation results
+    Background Celery task for voice translation processing using the orchestrator
     """
     try:
-        logger.info(f"Starting background voice translation task for user {user_id}")
+        from .orchestrator import TranslationOrchestrator
+        from .models import SpeechTranslation
         
-        # Get user
-        user = User.objects.get(id=user_id)
+        translation_record = SpeechTranslation.objects.get(id=translation_id)
+        orchestrator = TranslationOrchestrator()
         
-        # Initialize async service
-        async_service = AsyncVoiceTranslationService()
+        result = orchestrator.translate_speech(
+            user=translation_record.user,
+            audio_file=None,
+            target_lang=translation_record.target_language,
+            source_lang=translation_record.original_language,
+            mode=translation_record.mode,
+            session_id=translation_record.session_id,
+            original_file_url=translation_record.original_file_url,
+            translation_id=translation_id
+        )
         
-        # Process translation (Note: This is running in sync context within Celery)
-        # For true async processing in Celery, we'd need async-compatible broker
-        import asyncio
-        
-        async def run_translation():
-            with open(audio_file_path, 'rb') as audio_file:
-                result = await async_service.process_voice_translation(
-                    user=user,
-                    audio_file=audio_file,
-                    session_id=session_id,
-                    target_language=target_language
-                )
-            return result
-        
-        # Run async function in sync context
-        result = asyncio.run(run_translation())
-        
-        # Mark task as successful
-        result['task_id'] = str(self.request.id)
-        result['processed_in_background'] = True
-        
-        logger.info(f"Background voice translation completed for user {user_id}")
         return result
         
     except Exception as e:
         logger.error(f"Error in background voice translation task: {str(e)}")
-        # Celery will automatically retry based on autoretry_for configuration
+        if translation_id:
+            from .models import SpeechTranslation
+            from .choices import TranslationStatus
+            SpeechTranslation.objects.filter(id=translation_id).update(
+                status=TranslationStatus.FAILED,
+                error_message=str(e)
+            )
+        raise
+
+
+
+@shared_task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 2, 'countdown': 300})
+def async_ebook_translation_task(self, translation_id: str, local_file_path: str = None) -> Dict[str, Any]:
+    """
+    Background Celery task for ebook/document translation
+    """
+    try:
+        logger.info(f"Starting background ebook translation task for record {translation_id}")
+        
+        from .services import DocumentTranslationService
+        from .models import TextTranslation
+        from core.mail import send_email
+        
+        service = DocumentTranslationService()
+        result = service.process_document_translation(translation_id, local_file_path)
+        
+        if result['success']:
+            # Send completion email
+            translation_record = TextTranslation.objects.get(id=translation_id)
+            if translation_record.user and translation_record.user.email:
+                subject = "Your Document Translation is Ready!"
+                body = f"""
+                Hello {translation_record.user.first_name or 'there'},
+                
+                Your document has been successfully translated to {translation_record.target_language}.
+                
+                You can download it now from your dashboard:
+                {translation_record.translated_file_url}
+                
+                Thank you for using Echo!
+                """
+                send_email(
+                    recipient=translation_record.user.email,
+                    subject=subject,
+                    body_text=body,
+                    enqueue=True
+                )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in background ebook translation task: {str(e)}")
         raise
 
 
@@ -76,13 +103,6 @@ def async_voice_translation_task(self, user_id: int, audio_file_path: str,
 def batch_translation_task(self, translation_requests: list) -> Dict[str, Any]:
     """
     Process multiple translation requests in parallel using Celery
-    
-    Args:
-        self: Celery task instance
-        translation_requests: List of translation request dictionaries
-        
-    Returns:
-        Dictionary with batch processing results
     """
     try:
         logger.info(f"Starting batch translation task with {len(translation_requests)} requests")
@@ -92,12 +112,9 @@ def batch_translation_task(self, translation_requests: list) -> Dict[str, Any]:
         
         for req in translation_requests:
             try:
-                # Dispatch individual translation task
+                # Dispatch individual voice translation task
                 task_result = async_voice_translation_task.delay(
-                    user_id=req['user_id'],
-                    audio_file_path=req['audio_file_path'],
-                    session_id=req.get('session_id'),
-                    target_language=req.get('target_language', 'en')
+                    translation_id=req['translation_id']
                 )
                 
                 results.append({
@@ -129,37 +146,34 @@ def batch_translation_task(self, translation_requests: list) -> Dict[str, Any]:
 @shared_task(bind=True)
 def cleanup_old_translations_task(self, days_old: int = 30) -> Dict[str, Any]:
     """
-    Background task to clean up old translation records
-    
-    Args:
-        self: Celery task instance
-        days_old: Number of days after which translations should be cleaned up
-        
-    Returns:
-        Dictionary with cleanup results
+    Background task to clean up old translation records across all types
     """
     try:
         logger.info(f"Starting cleanup of translations older than {days_old} days")
         
         from django.utils import timezone
         from datetime import timedelta
+        from .models import TextTranslation, SpeechTranslation, ImageTranslation
         
         cutoff_date = timezone.now() - timedelta(days=days_old)
         
-        # Get count before deletion
-        old_translations = Translation.objects.filter(created_at__lt=cutoff_date)
-        count_before = old_translations.count()
+        total_deleted = 0
+        deleted_details = {}
         
-        # Delete old translations
-        deleted_count = old_translations.delete()[0]
+        for model in [TextTranslation, SpeechTranslation, ImageTranslation]:
+            old_records = model.objects.filter(date_created__lt=cutoff_date)
+            count = old_records.count()
+            deleted_count = old_records.delete()[0]
+            total_deleted += deleted_count
+            deleted_details[model.__name__] = deleted_count
         
-        logger.info(f"Cleanup completed: {deleted_count} translations deleted")
+        logger.info(f"Cleanup completed: {total_deleted} translations deleted. Details: {deleted_details}")
         
         return {
             'task_id': str(self.request.id),
             'cutoff_date': cutoff_date.isoformat(),
-            'translations_found': count_before,
-            'translations_deleted': deleted_count,
+            'total_deleted': total_deleted,
+            'details': deleted_details,
             'success': True
         }
         
@@ -171,13 +185,7 @@ def cleanup_old_translations_task(self, days_old: int = 30) -> Dict[str, Any]:
 @shared_task(bind=True)
 def translation_analytics_task(self) -> Dict[str, Any]:
     """
-    Background task to generate translation analytics and statistics
-    
-    Args:
-        self: Celery task instance
-        
-    Returns:
-        Dictionary with analytics results
+    Background task to generate translation analytics and statistics across all types
     """
     try:
         logger.info("Starting translation analytics generation")
@@ -185,49 +193,37 @@ def translation_analytics_task(self) -> Dict[str, Any]:
         from django.db.models import Count, Avg, Q
         from django.utils import timezone
         from datetime import timedelta
+        from .models import TextTranslation, SpeechTranslation, ImageTranslation
         
-        # Get analytics for the last 30 days
         thirty_days_ago = timezone.now() - timedelta(days=30)
         
-        # Total translations
-        total_translations = Translation.objects.count()
-        recent_translations = Translation.objects.filter(created_at__gte=thirty_days_ago).count()
+        total_count = 0
+        recent_count = 0
+        type_counts = {}
         
-        # Language statistics
-        language_stats = Translation.objects.values('original_language', 'target_language').annotate(
-            count=Count('id')
-        ).order_by('-count')[:10]
+        for model in [TextTranslation, SpeechTranslation, ImageTranslation]:
+            name = model.__name__
+            all_q = model.objects.all()
+            total_count += all_q.count()
+            recent = all_q.filter(date_created__gte=thirty_days_ago).count()
+            recent_count += recent
+            type_counts[name] = all_q.count()
         
-        # User statistics
-        user_stats = Translation.objects.values('user').annotate(
-            translation_count=Count('id'),
-            avg_confidence=Avg('confidence_score')
-        ).order_by('-translation_count')[:10]
-        
-        # Performance statistics
-        avg_processing_time = Translation.objects.aggregate(
-            avg_time=Avg('processing_time')
+        # Performance statistics from SpeechTranslation (most relevant for processing times)
+        avg_processing_time = SpeechTranslation.objects.aggregate(
+            avg_time=Avg('total_processing_time')
         )['avg_time'] or 0
-        
-        # Success rate
-        successful_translations = Translation.objects.filter(
-            translated_text__isnull=False
-        ).exclude(translated_text='').count()
-        
-        success_rate = (successful_translations / total_translations * 100) if total_translations > 0 else 0
         
         analytics = {
             'task_id': str(self.request.id),
             'generated_at': timezone.now().isoformat(),
             'period': '30_days',
             'totals': {
-                'all_time_translations': total_translations,
-                'recent_translations': recent_translations,
-                'success_rate_percent': round(success_rate, 2),
-                'avg_processing_time_seconds': round(avg_processing_time, 2)
+                'all_time_translations': total_count,
+                'recent_translations': recent_count,
+                'avg_speech_processing_time_seconds': round(avg_processing_time, 2)
             },
-            'language_stats': list(language_stats),
-            'top_users': list(user_stats),
+            'type_distribution': type_counts,
             'success': True
         }
         
@@ -236,4 +232,81 @@ def translation_analytics_task(self) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error in analytics task: {str(e)}")
+        raise
+
+@shared_task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
+def async_stt_task(self, user_id: int, audio_file_path: Optional[str], 
+                   translation_id: str, source_language: str = 'auto', 
+                   target_language: Optional[str] = None,
+                   mode: str = 'LARGE', session_id: Optional[str] = None,
+                   original_file_url: Optional[str] = None) -> Dict[str, Any]:
+    """Background task for Large Speech-to-Text"""
+    try:
+        from .orchestrator import TranslationOrchestrator
+        from .models import SpeechTranslation
+        
+        user = User.objects.get(id=user_id)
+        orchestrator = TranslationOrchestrator()
+        
+        # In Large mode, the record is already created by the view
+        # But we need to pass a special handle or let orchestrator handle it
+        # Let's modify orchestrator if needed, but for now we can just call it
+        
+        result = orchestrator.speech_to_text(
+            user=user,
+            audio_file=audio_file_path,
+            source_language=source_language,
+            target_language=target_language,
+            mode=mode,
+            session_id=session_id,
+            original_file_url=original_file_url,
+            translation_id=translation_id
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error in async_stt_task: {str(e)}")
+        if translation_id:
+            from .models import SpeechTranslation
+            from .choices import TranslationStatus
+            SpeechTranslation.objects.filter(id=translation_id).update(
+                status=TranslationStatus.FAILED,
+                error_message=str(e)
+            )
+        raise
+
+@shared_task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
+def async_tts_task(self, user_id: int, text: str, source_language: str, 
+                   translation_id: str, target_language: Optional[str] = None,
+                   voice: Optional[str] = None,
+                   mode: str = 'LARGE', session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Background task for Large Text-to-Speech"""
+    try:
+        from .orchestrator import TranslationOrchestrator
+        from .models import SpeechTranslation
+        
+        user = User.objects.get(id=user_id)
+        orchestrator = TranslationOrchestrator()
+        
+        result = orchestrator.text_to_speech(
+            user=user,
+            text=text,
+            source_language=source_language,
+            target_language=target_language,
+            voice=voice,
+            mode=mode,
+            session_id=session_id,
+            translation_id=translation_id
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error in async_tts_task: {str(e)}")
+        if translation_id:
+            from .models import SpeechTranslation
+            from .choices import TranslationStatus
+            SpeechTranslation.objects.filter(id=translation_id).update(
+                status=TranslationStatus.FAILED,
+                error_message=str(e)
+            )
         raise

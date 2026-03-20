@@ -9,14 +9,15 @@ from django.contrib.auth import get_user_model
 import uuid
 from core.constants import  CLOUD_STORAGE_PROVIDERS
 from core.model import BaseModel
-from .choices import FeatureType
+from django.conf import settings
+from .choices import TranslationStatus, TranslationMode, SpeechServiceType
 
 User = get_user_model()
 
 
-class TranslationProcessingTime(BaseModel):
+class SpeechTranslationProcessingTime(BaseModel):
     """Model for storing translation processing times"""
-    translation = models.ForeignKey('Translation', on_delete=models.CASCADE, related_name='processing_times')
+    translation = models.ForeignKey('SpeechTranslation', on_delete=models.CASCADE, related_name='processing_times')
     speech_to_text = models.FloatField(default=0.0, help_text="Speech-to-text processing time in seconds")  # seconds
     text_to_text = models.FloatField(default=0.0)  # seconds
     text_to_speech = models.FloatField(default=0.0)  # seconds
@@ -24,31 +25,125 @@ class TranslationProcessingTime(BaseModel):
 
 
 
-class Translation(BaseModel):
-    """Model for storing translation records"""
-    
-    
+class BaseTranslation(BaseModel):
+    """Abstract Base Class for all translation types"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='translations', null=True, blank=True)
-    feature_type = models.CharField(max_length=50, choices=FeatureType.choices,null=True,blank=True)
-    original_text = models.TextField(null=True, blank=True)
-    translated_text = models.TextField(null=True, blank=True)
-    original_language = models.CharField(max_length=10)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='%(class)s_translations', null=True, blank=True)
+    title = models.CharField(max_length=255, blank=True, null=True)
+    
+    # Language info
+    original_language = models.CharField(max_length=10, default='auto')
     target_language = models.CharField(max_length=10, default='en')
-    original_audio_url = models.URLField(blank=True, null=True, help_text="Cloud storage URL for original audio file")
-    translated_audio_url = models.URLField(blank=True, null=True, help_text="Cloud storage URL for translated audio file")
-    original_filename = models.CharField(max_length=255, blank=True, null=True, help_text="Original filename of uploaded audio")
-    audio_format = models.CharField(max_length=10, blank=True, null=True, help_text="Audio file format (wav, mp3, etc.)")
-    confidence_score = models.FloatField(default=0.0)
-    total_processing_time = models.FloatField(default=0.0)  # seconds
+    
+    # Status and Metadata
+    status = models.CharField(
+        max_length=20, 
+        choices=TranslationStatus.choices, 
+        default=TranslationStatus.PENDING
+    )
+    mode = models.CharField(
+        max_length=10, 
+        choices=TranslationMode.choices, 
+        default=TranslationMode.SHORT
+    )
     session_id = models.CharField(max_length=100, blank=True, null=True)
-   
+    error_message = models.TextField(blank=True, null=True)
+    total_processing_time = models.FloatField(default=0.0)
     
     class Meta:
+        abstract = True
         ordering = ['-date_created']
-        
+
+
+class TextTranslation(BaseTranslation):
+    """Model for text-to-text translations"""
+    original_text = models.TextField()
+    translated_text = models.TextField(blank=True, null=True)
+    is_sms = models.BooleanField(default=False, help_text="Whether this is an SMS translation")
+    
+    # Document fields for Large text translations
+    original_file_url = models.URLField(blank=True, null=True)
+    translated_file_url = models.URLField(blank=True, null=True)
+    
+    
     def __str__(self):
-        return f"{self.original_language} -> {self.target_language}: {self.original_text[:50]}..."
+        return f"Text: {self.original_language} -> {self.target_language} ({self.mode})"
+
+
+class SpeechTranslation(BaseTranslation):
+    """Model for speech-to-speech/text translations"""
+    # Audio fields
+    original_audio = models.FileField(upload_to='translation/speech/input/', null=True, blank=True)
+    translated_audio = models.FileField(upload_to='translation/speech/output/', null=True, blank=True)
+    original_audio_url = models.URLField(blank=True, null=True)
+    translated_audio_url = models.URLField(blank=True, null=True)
+    
+    # Text results
+    original_text = models.TextField(blank=True, null=True)
+    translated_text = models.TextField(blank=True, null=True)
+    
+    # Keep transcript/translation as aliases or just remove? I'll remove for clean refactor
+    # if the user has existing data, we would need a migration, but for now I'll replace.
+    
+    # Technical metadata
+    audio_format = models.CharField(max_length=10, blank=True, null=True)
+    duration = models.FloatField(default=0.0)
+    confidence_score = models.FloatField(default=0.0)
+    speech_service = models.CharField(
+        max_length=10, 
+        choices=SpeechServiceType.choices, 
+        default=SpeechServiceType.STS
+    )
+    
+    def __str__(self):
+        return f"Speech: {self.original_language} -> {self.target_language} ({self.mode})"
+
+
+class ImageTranslation(BaseTranslation):
+    """Model for image-based translations (OCR)"""
+    original_image = models.ImageField(upload_to='translations/images/original/')
+    ocr_text = models.TextField(null=True, blank=True)
+    translated_text = models.TextField(null=True, blank=True)
+    
+    class Meta(BaseTranslation.Meta):
+        verbose_name_plural = "Image Translations"
+    
+    def __str__(self):
+        return f"Image: {self.original_language} -> {self.target_language}"
+
+
+class LLMLog(models.Model):
+    """Log to track usage of LLM and AI services"""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+    provider = models.CharField(max_length=50) # e.g., 'Google'
+    model_name = models.CharField(max_length=100) # e.g., 'gemini-2.0-flash'
+    function_performed = models.CharField(max_length=50) # e.g., 'ASR', 'Translation', 'TTS', 'Image'
+    input_tokens = models.IntegerField(default=0)
+    output_tokens = models.IntegerField(default=0)
+    total_tokens = models.IntegerField(default=0)
+    latency = models.FloatField(default=0.0) # in seconds
+    cost = models.DecimalField(max_digits=10, decimal_places=6, default=0.0)
+    status = models.CharField(max_length=20, default='success')
+    error_message = models.TextField(null=True, blank=True)
+    
+    # Relationships to translation models (nullable)
+    text_translation = models.ForeignKey(TextTranslation, on_delete=models.SET_NULL, null=True, blank=True, related_name='llm_logs')
+    speech_translation = models.ForeignKey(SpeechTranslation, on_delete=models.SET_NULL, null=True, blank=True, related_name='llm_logs')
+    image_translation = models.ForeignKey(ImageTranslation, on_delete=models.SET_NULL, null=True, blank=True, related_name='llm_logs')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "LLM Usage Log"
+        verbose_name_plural = "LLM Usage Logs"
+
+    def __str__(self):
+        return f"{self.function_performed} - {self.model_name} - {self.created_at}"
+
+
+# Keep a legacy or common reference for AudioFile if needed, or remove it
+# I'll update AudioFile to link to SpeechTranslation instead of Translation
 
 
 class UserSettings(BaseModel):
@@ -105,7 +200,7 @@ class AudioFile(BaseModel):
     file_size = models.IntegerField(default=0)  # bytes
     format = models.CharField(max_length=10, default='wav')
     sample_rate = models.IntegerField(default=44100)
-    translation = models.ForeignKey(Translation, on_delete=models.CASCADE, related_name='audio_files')
+    translation = models.ForeignKey(SpeechTranslation, on_delete=models.CASCADE, related_name='audio_files')
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -164,7 +259,9 @@ class LanguageSupport(BaseModel):
     speech_to_text_supported = models.BooleanField(default=True)
     text_to_speech_supported = models.BooleanField(default=True)
     text_to_text_supported = models.BooleanField(default=True)
-    translation_supported = models.BooleanField(default=True)
+    speech_to_speech_translation_supported = models.BooleanField(default=True)
+    image_translation_supported = models.BooleanField(default=True)
+    document_translation_supported = models.BooleanField(default=True)
     is_african_language = models.BooleanField(default=False)
     
     class Meta:

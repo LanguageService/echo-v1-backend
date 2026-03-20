@@ -19,7 +19,7 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from celery.result import AsyncResult
 
-from .models import Translation, UserSettings, LanguageSupport
+from .models import TextTranslation, SpeechTranslation, ImageTranslation, UserSettings, LanguageSupport
 from .services import (
     AsyncVoiceTranslationService, AsyncSpeechService, 
     AsyncTranslationService, AsyncTextToSpeechService

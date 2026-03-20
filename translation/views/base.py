@@ -10,12 +10,14 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import generics, filters
+from django_filters.rest_framework import DjangoFilterBackend
 from django.conf import settings
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 from drf_spectacular.types import OpenApiTypes
 
-from ..models import Translation, UserSettings, LanguageSupport
-from ..serializers import (
+from translation.models import TextTranslation, SpeechTranslation, ImageTranslation, UserSettings, LanguageSupport
+from translation.serializers import (
      UserSettingsSerializer, LanguageSupportSerializer,
 
 )
@@ -24,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 
-@extend_schema(tags=["Users Settings"])
+@extend_schema(tags=["Infrastructure & Settings"])
 class UserSettingsAPIView(APIView):
     """Endpoint for user settings management"""
     
@@ -59,7 +61,6 @@ class UserSettingsAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @extend_schema(
-        tags=['Voice Translation Settings'],
         summary='Update User Settings',
         description='Update voice translation settings for the authenticated user',
         request=UserSettingsSerializer,
@@ -106,20 +107,26 @@ class UserSettingsAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@extend_schema(tags=["Language Support Settings"])
-class LanguageSupportAPIView(APIView):
+@extend_schema(tags=["Infrastructure & Settings"])
+class LanguageSupportAPIView(generics.ListAPIView):
     """Endpoint for supported languages information"""
     
+    queryset = LanguageSupport.objects.all()
+    serializer_class = LanguageSupportSerializer
     permission_classes = [AllowAny]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = [
+        'speech_to_text_supported', 
+        'text_to_speech_supported', 
+        'text_to_text_supported', 
+        'speech_to_speech_translation_supported', 
+        'image_translation_supported', 
+        'document_translation_supported', 
+        'is_african_language'
+    ]
+    search_fields = ['name', 'code', 'native_name']
     
     @extend_schema(
-        parameters=[
-            OpenApiParameter(name='african_only', description='Filter for African languages.', type=OpenApiTypes.BOOL),
-            OpenApiParameter(name='stt_supported', description='Filter for languages that support Speech-to-Text.', type=OpenApiTypes.BOOL),
-            OpenApiParameter(name='tts_supported', description='Filter for languages that support Text-to-Speech.', type=OpenApiTypes.BOOL),
-            OpenApiParameter(name='translation_supported', description='Filter for languages that support translation.', type=OpenApiTypes.BOOL),
-            OpenApiParameter(name='text_to_text_supported', description='Filter for languages that support text-to-text translation.', type=OpenApiTypes.BOOL),
-        ],
         responses={
             200: OpenApiResponse(
                 description='A list of supported languages.',
@@ -127,45 +134,22 @@ class LanguageSupportAPIView(APIView):
             )
         }
     )
-    def get(self, request, *args, **kwargs):
-        """Get list of supported languages"""
-        try:
-            # Filter parameters
-            african_only = request.query_params.get('african_only', '').lower() == 'true'
-            stt_supported = request.query_params.get('stt_supported', '').lower() == 'true'
-            tts_supported = request.query_params.get('tts_supported', '').lower() == 'true'
-            translation_supported = request.query_params.get('translation_supported', '').lower() == 'true'
-            text_to_text_supported = request.query_params.get('text_to_text_supported', '').lower() == 'true'
-            
-            # Build queryset
-            queryset = LanguageSupport.objects.all()
-            
-            if african_only:
-                queryset = queryset.filter(is_african_language=True)
-            if stt_supported:
-                queryset = queryset.filter(speech_to_text_supported=True)
-            if tts_supported:
-                queryset = queryset.filter(text_to_speech_supported=True)
-            if translation_supported:
-                queryset = queryset.filter(translation_supported=True)
-            if text_to_text_supported:
-                queryset = queryset.filter(text_to_text_supported=True)
-            
-            serializer = LanguageSupportSerializer(queryset, many=True)
-            
-            return Response({
-                'count': queryset.count(),
-                'languages': serializer.data
-            }, status=status.HTTP_200_OK)
-            
-        except Exception as e:
-            logger.error(f"Error retrieving supported languages: {str(e)}")
-            return Response({
-                'error': f'Failed to retrieve languages: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    def list(self, request, *args, **kwargs):
+        """Get list of supported languages with custom response format"""
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # We don't use pagination for this relatively small list, 
+        # but if we did, we'd handle it here.
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response({
+            'count': queryset.count(),
+            'languages': serializer.data
+        }, status=status.HTTP_200_OK)
 
 
-@extend_schema(tags=["Health Check"])
+@extend_schema(tags=["Infrastructure & Settings"])
 class HealthCheckAPIView(APIView):
     """Health check endpoint for the voice translation service"""
     
@@ -174,8 +158,12 @@ class HealthCheckAPIView(APIView):
     def get(self, request, *args, **kwargs):
         """Health check endpoint"""
         try:
-            # Check database connectivity
-            translation_count = Translation.objects.count()
+            # Check database connectivity and aggregate stats
+            translation_count = (
+                TextTranslation.objects.count() + 
+                SpeechTranslation.objects.count() + 
+                ImageTranslation.objects.count()
+            )
             settings_count = UserSettings.objects.count()
             language_count = LanguageSupport.objects.count()
             
@@ -198,7 +186,7 @@ class HealthCheckAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@extend_schema(tags=["API Info"])
+@extend_schema(tags=["Infrastructure & Settings"])
 class APIInfoView(APIView):
     """API information and documentation endpoint"""
     
@@ -237,14 +225,12 @@ class APIInfoView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-
 class TaskStatusAPIView(APIView):
     """API endpoint for checking background task status"""
     
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
-        tags=['Voice Translation (Background)'],
         summary='Check Background Task Status',
         description='Check the status and results of a background voice translation task'
     )

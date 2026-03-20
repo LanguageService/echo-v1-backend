@@ -26,6 +26,7 @@ base_settings = [
     "components/email.py",
     "components/logger.py",
     "components/config_urls.py",
+    "components/celery.py",
     optional("environments/%s.py" % ENV),
 ]
 
