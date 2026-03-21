@@ -15,7 +15,7 @@ client = genai.Client(api_key=settings.GEMINI_API_KEY)
 class GeminiTTSProvider(BaseTTSProvider):
     """Gemini-based Text-to-Speech (TTS) provider"""
     
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash-preview-tts"):
         self.model = model
     
     def synthesize(self, text: str, language: str, voice: Optional[str] = 'Zephyr') -> Dict[str, Any]:
@@ -27,17 +27,28 @@ class GeminiTTSProvider(BaseTTSProvider):
             
             # Map common voice names to Gemini names
             voice_mapping = {
-                'Zephyr': 'Puck', 
-                'Echo': 'Aoede',
-                'Sky': 'Kore',
-                'Onyx': 'Fenrir'
+                'Zephyr': 'Zephyr',
+                'Nova': 'Puck',
+                'Orbit': 'Charon',
+                'Echo': 'Kore',
+                'Breeze': 'Fenrir',
+                'Aria': 'Aoede'
             }
             gemini_voice = voice_mapping.get(voice, 'Aoede')
             
-            # Process synthesis
+            # Model ID with prefix
+            if not self.model.startswith("models/"):
+                model_id = f"models/{self.model}"
+            else:
+                model_id = self.model
+                
+            # Use a more explicit prompt for -tts models to satisfy guardrails
+            # This prevents the "Model tried to generate text" error
+            prompt = f"Please synthesize the following text into audio, no text response: {text}"
+            
             response = client.models.generate_content(
-                model=self.model,
-                contents=text,
+                model=model_id,
+                contents=prompt,
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
                     speech_config=types.SpeechConfig(
@@ -56,7 +67,6 @@ class GeminiTTSProvider(BaseTTSProvider):
                     if hasattr(cand, 'content') and hasattr(cand.content, 'parts'):
                         for part in cand.content.parts:
                             if hasattr(part, 'inline_data') and part.inline_data:
-                                # Gemini returns PCM (usually), but we might need to convert it or return it raw
                                 audio_data = part.inline_data.data # Bytes
                                 break
             
@@ -78,7 +88,7 @@ class GeminiTTSProvider(BaseTTSProvider):
                 'usage': usage,
                 'char_count': len(text),
                 'error': None if audio_data else 'No audio data returned from model',
-                'model': self.model,
+                'model': model_id,
                 'provider': 'Google'
             }
             
