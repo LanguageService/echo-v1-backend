@@ -1064,20 +1064,35 @@ class DocumentTranslationService(GeminiService):
                     'message': 'Starting document processing...'
                 })
 
-            # 2. Upload original file to cloud storage (if not already there)
-            if not translation_record.original_file and local_file_path and os.path.exists(local_file_path):
+            # 2. Upload original file to cloud storage
+            if local_file_path and os.path.exists(local_file_path):
                 logger.info(f"Uploading original file {local_file_path} to cloud storage...")
-                from django.core.files import File
-                with open(local_file_path, 'rb') as f:
-                    django_file = File(f)
-                    django_file.name = translation_record.original_filename
+                try:
+                    # Save locally first
+                    from django.core.files import File
+                    with open(local_file_path, 'rb') as f:
+                        django_file = File(f)
+                        django_file.name = translation_record.original_filename
+                        translation_record.original_file.save(django_file.name, django_file, save=True)
                     
-                    # Save to FileField (triggers cloud upload in background task)
-                    translation_record.original_file.save(django_file.name, django_file, save=True)
-                    
-                    # Also keep URL for backward compatibility if needed
-                    translation_record.original_file_url = translation_record.original_file.url
-                    translation_record.save()
+                    # Upload to cloud explicitly
+                    if cloud_storage.is_available():
+                        with open(local_file_path, 'rb') as f:
+                            from django.core.files.base import ContentFile
+                            # Use ContentFile and add content_type for the cloud_storage service
+                            content_file = ContentFile(f.read(), name=translation_record.original_filename)
+                            content_file.content_type = 'application/pdf' if file_ext == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                            
+                            remote_url = cloud_storage.upload_document_input_file(
+                                file=content_file,
+                                language=translation_record.original_language or 'en',
+                                user_id=str(translation_record.user_id or 'anonymous')
+                            )
+                            if remote_url:
+                                translation_record.original_file_url = remote_url
+                                translation_record.save()
+                except Exception as e:
+                    logger.warning(f"Initial cloud upload for document failed: {e}")
             
             # 3. Setup processing environment
             file_ext = translation_record.file_format
@@ -1132,14 +1147,36 @@ class DocumentTranslationService(GeminiService):
                 else:
                     self.docx_processor.replace_text(local_file_path, translated_blocks, output_path)
 
-                # 8. Upload translated file to cloud storage
+                # 8. Save and Upload translated file
+                # Save locally first
                 from django.core.files import File
                 with open(output_path, 'rb') as f:
                     django_output_file = File(f)
                     django_output_file.name = f"translated_{translation_record.original_filename}"
-                    
                     translation_record.translated_file.save(django_output_file.name, django_output_file, save=True)
-                    translated_url = translation_record.translated_file.url
+                
+                translated_url = translation_record.translated_file.url
+                
+                # Upload to cloud explicitly
+                if cloud_storage.is_available():
+                    try:
+                        remote_translated_url = cloud_storage.upload_document_output_file(
+                            file_path=output_path,
+                            language=target_language,
+                            user_id=str(translation_record.user_id or 'anonymous'),
+                            file_format=file_ext
+                        )
+                        if remote_translated_url:
+                            translated_url = remote_translated_url
+                            translation_record.translated_file_url = remote_translated_url
+                            # Clear local file if cloud upload was successful
+                            local_output_path = translation_record.translated_file.path
+                            if os.path.exists(local_output_path):
+                                os.remove(local_output_path)
+                            translation_record.translated_file.name = None
+                            translation_record.save()
+                    except Exception as e:
+                        logger.warning(f"Cloud upload for translated document failed: {e}")
 
                 # 9. Update record as COMPLETED
                 processing_time = time.time() - start_time

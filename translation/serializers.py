@@ -76,7 +76,7 @@ class ImageTranslationSerializer(serializers.ModelSerializer):
     class Meta:
         model = ImageTranslation
         fields = [
-            'id', 'title', 'mode', 'original_image', 'ocr_text', 'translated_text',
+            'id', 'title', 'mode', 'original_image', 'original_image_url', 'ocr_text', 'translated_text',
             'status', 'original_language', 'target_language', 'total_processing_time', 
             'date_created'
         ]

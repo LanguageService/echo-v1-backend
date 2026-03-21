@@ -115,6 +115,10 @@ class CloudStorageService:
     
     def is_available(self) -> bool:
         """Check if cloud storage is properly configured and available"""
+        # 1. Disable cloud storage in local environment
+        if config("ENV_MODE", default="prod") == "local":
+            return False
+            
         if self.config is None:
             self.config = self._get_active_config()
             if self.config:
@@ -144,6 +148,23 @@ class CloudStorageService:
         # Default fallback
         return 'translation'
     
+    def _get_user_hex(self, user_id: str) -> str:
+        """Convert user_id to its hexadecimal representation if it's a UUID or integer"""
+        if not user_id or user_id == "anonymous":
+            return "anonymous"
+        
+        try:
+            # Handle UUID string (with or without dashes)
+            import uuid
+            return uuid.UUID(user_id).hex
+        except (ValueError, AttributeError):
+            try:
+                # Handle integer string
+                return hex(int(user_id))[2:]
+            except (ValueError, TypeError):
+                # Fallback to simple string cleanup or hash if needed
+                return user_id.replace('-', '')
+    
     def upload_voice_input_file(self, file: UploadedFile, language: str, user_id: str) -> Optional[str]:
         """
         Upload voice input file to cloud storage
@@ -156,7 +177,8 @@ class CloudStorageService:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'audio'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
-        folder_path = f"translation/voice/input/{language}/{filename}"
+        user_hex = self._get_user_hex(user_id)
+        folder_path = f"translation/{user_hex}/speech/{filename}"
         
         return self._upload_file(file, folder_path)
     
@@ -171,7 +193,8 @@ class CloudStorageService:
             
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
-        folder_path = f"voice/output/{language}/{filename}"
+        user_hex = self._get_user_hex(user_id)
+        folder_path = f"translation/{user_hex}/speech/{filename}"
         
         return self._upload_bytes(file_content, folder_path)
     
@@ -187,7 +210,8 @@ class CloudStorageService:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'jpg'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
-        folder_path = f"translation/image/input/{language}/{filename}"
+        user_hex = self._get_user_hex(user_id)
+        folder_path = f"translation/{user_hex}/image/{filename}"
         
         return self._upload_file(file, folder_path)
     
@@ -203,7 +227,8 @@ class CloudStorageService:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'doc'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
-        folder_path = f"translation/document/input/{language}/{filename}"
+        user_hex = self._get_user_hex(user_id)
+        folder_path = f"translation/{user_hex}/text/{filename}"
         
         return self._upload_file(file, folder_path)
 
@@ -218,7 +243,8 @@ class CloudStorageService:
             
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
-        folder_path = f"translation/document/output/{language}/{filename}"
+        user_hex = self._get_user_hex(user_id)
+        folder_path = f"translation/{user_hex}/text/{filename}"
         
         with open(file_path, 'rb') as f:
             from django.core.files.base import ContentFile

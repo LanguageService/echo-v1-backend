@@ -102,6 +102,7 @@ class SpeechTranslation(BaseTranslation):
 class ImageTranslation(BaseTranslation):
     """Model for image-based translations (OCR)"""
     original_image = models.ImageField(upload_to='translations/images/original/')
+    original_image_url = models.URLField(blank=True, null=True)
     ocr_text = models.TextField(null=True, blank=True)
     translated_text = models.TextField(null=True, blank=True)
     

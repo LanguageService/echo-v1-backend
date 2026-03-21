@@ -1,10 +1,12 @@
 import logging
+import os
 import time
 from typing import Dict, Any, Optional, BinaryIO
 from django.core.files.base import ContentFile
 from .providers.factory import ProviderFactory
 from .models import TextTranslation, SpeechTranslation, ImageTranslation
 from .choices import TranslationStatus, TranslationMode, SpeechServiceType
+from .cloud_storage import cloud_storage
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +17,133 @@ class TranslationOrchestrator:
         self.asr = ProviderFactory.get_asr_provider()
         self.translator = ProviderFactory.get_translation_provider()
         self.tts = ProviderFactory.get_tts_provider()
+
+    def _save_audio(self, translation_record: SpeechTranslation, audio_data: bytes,
+                    filename: str, user_id: str, language: str) -> None:
+        """Save synthesised audio bytes.
+
+        1. Always write to the Django FileField first (local MEDIA_ROOT).
+        2. If cloud storage is available, upload the file and delete the
+           local copy, storing the remote URL on the record instead.
+        3. If cloud storage is unavailable, keep the local file as-is.
+        """
+        # Step 1 – persist locally so the FileField path is valid
+        translation_record.translated_audio.save(filename, ContentFile(audio_data), save=True)
+
+        # Step 2 – try cloud upload
+        try:
+            if cloud_storage.is_available():
+                remote_url = cloud_storage.upload_voice_output_file(
+                    file_content=audio_data,
+                    language=language,
+                    user_id=str(user_id)
+                )
+                if remote_url:
+                    # Store the public cloud URL
+                    translation_record.translated_audio_url = remote_url
+
+                    # Step 3 – remove the now-redundant local file
+                    local_path = translation_record.translated_audio.path
+                    try:
+                        if os.path.exists(local_path):
+                            os.remove(local_path)
+                            logger.info(f"Deleted local audio file after cloud upload: {local_path}")
+                    except OSError as exc:
+                        logger.warning(f"Could not delete local audio file {local_path}: {exc}")
+
+                    # Clear the FileField so we don't reference a deleted file
+                    translation_record.translated_audio.name = None
+                    translation_record.save(update_fields=['translated_audio', 'translated_audio_url'])
+                    return
+                else:
+                    logger.warning("Cloud upload returned no URL – keeping local file.")
+            else:
+                logger.info("Cloud storage not available – audio stored locally only.")
+        except Exception as exc:
+            logger.error(f"Cloud upload failed, keeping local file: {exc}")
+
+    def _save_input_audio(self, translation_record: SpeechTranslation, audio_file: Any,
+                          filename: str, user_id: str, language: str) -> None:
+        """Save input audio file.
+
+        1. Save to local FileField.
+        2. Upload to cloud if available.
+        3. Store cloud URL and delete local copy.
+        """
+        # Step 1 – save locally
+        translation_record.original_audio.save(filename, audio_file, save=True)
+
+        # Step 2 – try cloud upload
+        try:
+            if cloud_storage.is_available():
+                # Ensure we are at the beginning of the file/bytes
+                if hasattr(audio_file, 'seek'):
+                    audio_file.seek(0)
+
+                remote_url = cloud_storage.upload_voice_input_file(
+                    file=audio_file,
+                    language=language,
+                    user_id=str(user_id)
+                )
+                if remote_url:
+                    translation_record.original_audio_url = remote_url
+
+                    # Step 3 – remove the local copy
+                    local_path = translation_record.original_audio.path
+                    try:
+                        if os.path.exists(local_path):
+                            os.remove(local_path)
+                            logger.info(f"Deleted local input audio file: {local_path}")
+                    except OSError as exc:
+                        logger.warning(f"Could not delete local input audio {local_path}: {exc}")
+
+                    translation_record.original_audio.name = None
+                    translation_record.save(update_fields=['original_audio', 'original_audio_url'])
+                    return
+                else:
+                    logger.warning("Cloud upload for input audio returned no URL.")
+        except Exception as exc:
+            logger.error(f"Input audio cloud upload failed: {exc}")
+
+    def _save_input_image(self, translation_record: ImageTranslation, image_file: Any,
+                          filename: str, user_id: str, language: str) -> None:
+        """Save input image file.
+
+        1. Save to local ImageField.
+        2. Upload to cloud if available.
+        3. Store cloud URL and delete local copy.
+        """
+        # Step 1 – save locally
+        translation_record.original_image.save(filename, image_file, save=True)
+
+        # Step 2 – try cloud upload
+        try:
+            if cloud_storage.is_available():
+                if hasattr(image_file, 'seek'):
+                    image_file.seek(0)
+
+                remote_url = cloud_storage.upload_image_input_file(
+                    file=image_file,
+                    language=language,
+                    user_id=str(user_id)
+                )
+                if remote_url:
+                    translation_record.original_image_url = remote_url
+
+                    # Step 3 – remove the local copy
+                    local_path = translation_record.original_image.path
+                    try:
+                        if os.path.exists(local_path):
+                            os.remove(local_path)
+                            logger.info(f"Deleted local input image file: {local_path}")
+                    except OSError as exc:
+                        logger.warning(f"Could not delete local image {local_path}: {exc}")
+
+                    translation_record.original_image.name = None
+                    translation_record.save(update_fields=['original_image', 'original_image_url'])
+                    return
+        except Exception as exc:
+            logger.error(f"Input image cloud upload failed: {exc}")
 
 
     def _log_usage(self, user, result: Dict[str, Any], function_performed: str, 
@@ -186,9 +315,15 @@ class TranslationOrchestrator:
                 speech_service=SpeechServiceType.STS
             )
         
-        # Save audio file if provided
+        # Save original audio (locally + cloud upload + local cleanup)
         if audio_file and not isinstance(audio_file, (str, bytes)) and hasattr(audio_file, 'name'):
-            translation_record.original_audio.save(f"input_{translation_record.id}.wav", audio_file)
+            self._save_input_audio(
+                translation_record=translation_record,
+                audio_file=audio_file,
+                filename=f"input_{translation_record.id}.wav",
+                user_id=translation_record.user_id,
+                language=translation_record.original_language
+            )
         
         try:
             # 1. ASR - Convert speech to text
@@ -217,22 +352,36 @@ class TranslationOrchestrator:
                 self._log_usage(user, tts_result, 'TTS', translation_record)
                 
                 if tts_result['success'] and tts_result['audio_data']:
-                    # Save translated audio
-                    translation_record.translated_audio.save(
-                        f"output_{translation_record.id}.wav", 
-                        ContentFile(tts_result['audio_data'])
+                    # Save translated audio (locally + cloud upload + local cleanup)
+                    self._save_audio(
+                        translation_record=translation_record,
+                        audio_data=tts_result['audio_data'],
+                        filename=f"output_{translation_record.id}.wav",
+                        user_id=translation_record.user_id,
+                        language=translation_record.target_language
                     )
             
             translation_record.status = TranslationStatus.COMPLETED
             translation_record.total_processing_time = time.time() - start_time
             translation_record.save()
             
+            # Prefer the cloud URL when available, fall back to local FileField URLs
+            translated_audio_url = (
+                translation_record.translated_audio_url
+                or (translation_record.translated_audio.url if translation_record.translated_audio else None)
+            )
+            original_audio_url = (
+                translation_record.original_audio_url
+                or (translation_record.original_audio.url if translation_record.original_audio else None)
+            )
+            
             return {
                 'success': True,
                 'translation_id': str(translation_record.id),
                 'original_text': translation_record.original_text,
                 'translated_text': translation_record.translated_text,
-                'translated_audio_url': translation_record.translated_audio.url if translation_record.translated_audio else None
+                'original_audio_url': original_audio_url,
+                'translated_audio_url': translated_audio_url
             }
             
         except Exception as e:
@@ -276,9 +425,15 @@ class TranslationOrchestrator:
                 speech_service=SpeechServiceType.STT
             )
         
-        # Save audio file if provided
+        # Save audio file if provided (locally + cloud upload + local cleanup)
         if audio_file and not isinstance(audio_file, (str, bytes)) and hasattr(audio_file, 'name'):
-            translation_record.original_audio.save(f"stt_input_{translation_record.id}.wav", audio_file)
+            self._save_input_audio(
+                translation_record=translation_record,
+                audio_file=audio_file,
+                filename=f"stt_input_{translation_record.id}.wav",
+                user_id=translation_record.user_id,
+                language=translation_record.original_language
+            )
             
         try:
             # Execute ASR
@@ -309,11 +464,18 @@ class TranslationOrchestrator:
             translation_record.total_processing_time = time.time() - start_time
             translation_record.save()
             
+            # Prefer the cloud URL when available, fall back to local FileField URL
+            original_audio_url = (
+                translation_record.original_audio_url
+                or (translation_record.original_audio.url if translation_record.original_audio else None)
+            )
+            
             return {
                 'success': True,
                 'translation_id': str(translation_record.id),
-                'original_text': translation_record.original_text,
-                'translated_text': translation_record.translated_text,
+                'original_text': transcription,
+                'translated_text': final_text,
+                'original_audio_url': original_audio_url,
                 'language': translation_record.original_language,
                 'confidence': translation_record.confidence_score
             }
@@ -374,20 +536,28 @@ class TranslationOrchestrator:
             if not tts_result['success'] or not tts_result['audio_data']:
                 raise Exception(f"TTS failed: {tts_result.get('error')}")
             
-            # Save translated audio
-            translation_record.translated_audio.save(
-                f"tts_output_{translation_record.id}.wav", 
-                ContentFile(tts_result['audio_data'])
+            # Save translated audio (locally + cloud upload + local cleanup)
+            self._save_audio(
+                translation_record=translation_record,
+                audio_data=tts_result['audio_data'],
+                filename=f"tts_output_{translation_record.id}.wav",
+                user_id=translation_record.user_id,
+                language=translation_record.target_language
             )
             
             translation_record.status = TranslationStatus.COMPLETED
             translation_record.total_processing_time = time.time() - start_time
             translation_record.save()
             
+            # Prefer the cloud URL when available, fall back to local FileField URL
+            translated_audio_url = (
+                translation_record.translated_audio_url
+                or (translation_record.translated_audio.url if translation_record.translated_audio else None)
+            )
             return {
                 'success': True,
                 'translation_id': str(translation_record.id),
-                'audio_url': translation_record.translated_audio.url,
+                'translated_audio_url': translated_audio_url,
                 'original_text': translation_record.original_text,
                 'translated_text': translation_record.translated_text
             }
@@ -416,8 +586,14 @@ class TranslationOrchestrator:
             target_language=target_lang,
             status=TranslationStatus.PROCESSING
         )
-        # Save original image
-        translation_record.original_image.save(f"input_{translation_record.id}.png", image_file)
+        # Save original image (locally + cloud upload + local cleanup)
+        self._save_input_image(
+            translation_record=translation_record,
+            image_file=image_file,
+            filename=f"input_{translation_record.id}.png",
+            user_id=translation_record.user_id,
+            language=translation_record.original_language
+        )
         
         try:
             # Gemini can do OCR and Translation in one go if prompted correctly
@@ -484,12 +660,18 @@ class TranslationOrchestrator:
             translation_record.total_processing_time = time.time() - start_time
             translation_record.save()
             
+            # Prefer the cloud URL when available, fall back to local FileField URL
+            image_url = (
+                translation_record.original_image_url
+                or (translation_record.original_image.url if translation_record.original_image else None)
+            )
+            
             return {
                 'success': True,
                 'translation_id': str(translation_record.id),
                 'ocr_text': ocr_text,
                 'translated_text': translated_text,
-                'image_url': translation_record.original_image.url
+                'image_url': image_url
             }
             
         except Exception as e:

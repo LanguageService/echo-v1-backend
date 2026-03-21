@@ -80,14 +80,21 @@ class GeminiTTSProvider(BaseTTSProvider):
             )
             
             audio_data = None
-            if hasattr(response, 'candidates'):
-                for cand in response.candidates:
-                    if hasattr(cand, 'content') and hasattr(cand.content, 'parts'):
-                        for part in cand.content.parts:
-                            if hasattr(part, 'inline_data') and part.inline_data:
-                                # Gemini returns raw 24kHz 16-bit mono PCM — wrap it in a WAV header
-                                audio_data = self._pcm_to_wav(part.inline_data.data)
-                                break
+            if hasattr(response, 'candidates') and response.candidates:
+                cand = response.candidates[0]
+                if cand.finish_reason and cand.finish_reason != 'STOP':
+                    logger.warning(f"Gemini TTS Finish Reason: {cand.finish_reason}")
+                
+                if hasattr(cand, 'content') and hasattr(cand.content, 'parts'):
+                    for part in cand.content.parts:
+                        if hasattr(part, 'inline_data') and part.inline_data:
+                            # Gemini returns raw 24kHz 16-bit mono PCM — wrap it in a WAV header
+                            audio_data = self._pcm_to_wav(part.inline_data.data)
+                            break
+                        elif hasattr(part, 'text') and part.text:
+                            logger.warning(f"Model returned text instead of audio: {part.text[:100]}")
+            else:
+                logger.error("No candidates returned from Gemini TTS model.")
             
             processing_time = time.time() - start_time
             
