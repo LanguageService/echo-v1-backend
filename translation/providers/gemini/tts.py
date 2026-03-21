@@ -1,5 +1,7 @@
+import io
 import logging
 import time
+import wave
 import base64
 from typing import Dict, Any, Optional
 from google import genai
@@ -17,6 +19,22 @@ class GeminiTTSProvider(BaseTTSProvider):
     
     def __init__(self, model: str = "gemini-2.5-flash-preview-tts"):
         self.model = model
+
+    @staticmethod
+    def _pcm_to_wav(pcm_data: bytes, sample_rate: int = 24000,
+                    num_channels: int = 1, sample_width: int = 2) -> bytes:
+        """Wrap raw PCM bytes in a proper WAV (RIFF) container.
+        
+        Gemini TTS returns 24 kHz, 16-bit (2-byte), mono PCM.
+        Without this header, the file cannot be played by any standard player.
+        """
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as wf:
+            wf.setnchannels(num_channels)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(sample_rate)
+            wf.writeframes(pcm_data)
+        return buf.getvalue()
     
     def synthesize(self, text: str, language: str, voice: Optional[str] = 'Zephyr') -> Dict[str, Any]:
         """Synthesize text to speech using Gemini AI"""
@@ -67,7 +85,8 @@ class GeminiTTSProvider(BaseTTSProvider):
                     if hasattr(cand, 'content') and hasattr(cand.content, 'parts'):
                         for part in cand.content.parts:
                             if hasattr(part, 'inline_data') and part.inline_data:
-                                audio_data = part.inline_data.data # Bytes
+                                # Gemini returns raw 24kHz 16-bit mono PCM — wrap it in a WAV header
+                                audio_data = self._pcm_to_wav(part.inline_data.data)
                                 break
             
             processing_time = time.time() - start_time
