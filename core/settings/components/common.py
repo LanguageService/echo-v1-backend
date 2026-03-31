@@ -263,6 +263,7 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.replit.dev',
     'https://echo-backend-uiei.onrender.com',
     "https://letusecho.vercel.app",  # Frontend Local
+    "https://*.vercel.app",
 ]
 
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
