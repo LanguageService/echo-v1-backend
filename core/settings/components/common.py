@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config("SECRET_KEY")
+SECRET_KEY = config("SECRET_KEY", default="django-insecure-default-key-for-build")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 
@@ -406,7 +406,7 @@ CACHES = {
 
 
 VERIFICATION_OTP_TIMEOUT = int(config("VERIFICATION_OTP_TIMEOUT", "30"))
-STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY")
+STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
 
 
 # Audio file settings
@@ -444,4 +444,4 @@ OTP_LENGTH = 6
 
 
 # Gemini API Settings
-GEMINI_API_KEY = config("GEMINI_API_KEY")
+GEMINI_API_KEY = config("GEMINI_API_KEY", default="")
