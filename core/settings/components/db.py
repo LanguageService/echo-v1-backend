@@ -1,5 +1,7 @@
+import os
 from pathlib import Path
 from decouple import config
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,13 +26,19 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('PGDATABASE'),
-            'USER': os.getenv('PGUSER'),
-            'PASSWORD': os.getenv('PGPASSWORD'),
-            'HOST': os.getenv('PGHOST'),
-            'PORT': os.getenv('PGPORT'),
+            'NAME': config('PGDATABASE', default=config('DATABASE_NAME', default='')),
+            'USER': config('PGUSER', default=config('DATABASE_USER', default='')),
+            'PASSWORD': config('PGPASSWORD', default=config('DATABASE_PASSWORD', default='')),
+            'HOST': config('PGHOST', default=config('DATABASE_HOST', default='')),
+            'PORT': config('PGPORT', default=config('DATABASE_PORT', default='5432')),
             'OPTIONS': {
                 'sslmode': 'require',
             },
         }
     }
+
+# This will override the above if DATABASE_URL is set in .env or environment
+db_url = config('DATABASE_URL', default=None)
+if db_url:
+    DATABASES['default'] = dj_database_url.config(default=db_url)
+
