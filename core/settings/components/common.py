@@ -245,7 +245,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = BASE_DIR / 'staticfiles_build'
+STATIC_ROOT = 'staticfiles_build'
 
 # Media files
 MEDIA_URL = '/media/'
