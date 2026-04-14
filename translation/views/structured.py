@@ -167,7 +167,7 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
             original_language=serializer.validated_data.get('source_language', 'auto'),
             target_language=serializer.validated_data['target_language'],
             mode=TranslationMode.LARGE,
-            original_file_url=serializer.validated_data.get('original_file_url'),
+            original_audio_url=serializer.validated_data.get('original_file_url'),
             status=TranslationStatus.PENDING,
             speech_service=serializer.validated_data.get('speech_service', SpeechServiceType.STS)
         )
@@ -230,7 +230,7 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
                 target_language=target_lang,
                 mode=TranslationMode.LARGE,
                 session_id=serializer.validated_data.get('session_id'),
-                original_file_url=serializer.validated_data.get('original_file_url'),
+                original_audio_url=serializer.validated_data.get('original_file_url'),
                 status=TranslationStatus.PENDING,
                 speech_service=SpeechServiceType.STT
             )
@@ -249,7 +249,7 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
                 target_language=translation.target_language,
                 mode=TranslationMode.LARGE,
                 session_id=translation.session_id,
-                original_file_url=translation.original_file_url
+                original_file_url=translation.original_audio_url
             )
             return Response({
                 "success": True,

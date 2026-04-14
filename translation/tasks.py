@@ -36,7 +36,7 @@ def async_voice_translation_task(self, translation_id: str) -> Dict[str, Any]:
             source_lang=translation_record.original_language,
             mode=translation_record.mode,
             session_id=translation_record.session_id,
-            original_file_url=translation_record.original_file_url,
+            original_file_url=translation_record.original_audio_url,
             translation_id=translation_id
         )
         

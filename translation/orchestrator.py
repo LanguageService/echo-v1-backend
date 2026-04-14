@@ -310,7 +310,7 @@ class TranslationOrchestrator:
                 target_language=target_lang,
                 mode=mode,
                 session_id=session_id,
-                original_file_url=original_file_url,
+                original_audio_url=original_file_url,
                 status=TranslationStatus.PROCESSING,
                 speech_service=SpeechServiceType.STS
             )
@@ -420,7 +420,7 @@ class TranslationOrchestrator:
                 target_language=target_lang,
                 mode=mode,
                 session_id=session_id,
-                original_file_url=original_file_url,
+                original_audio_url=original_file_url,
                 status=TranslationStatus.PROCESSING,
                 speech_service=SpeechServiceType.STT
             )
