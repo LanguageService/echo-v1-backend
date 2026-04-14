@@ -20,17 +20,9 @@ class TranslationOrchestrator:
 
     def _save_audio(self, translation_record: SpeechTranslation, audio_data: bytes,
                     filename: str, user_id: str, language: str) -> None:
-        """Save synthesised audio bytes.
-
-        1. Always write to the Django FileField first (local MEDIA_ROOT).
-        2. If cloud storage is available, upload the file and delete the
-           local copy, storing the remote URL on the record instead.
-        3. If cloud storage is unavailable, keep the local file as-is.
-        """
-        # Step 1 – persist locally so the FileField path is valid
-        translation_record.translated_audio.save(filename, ContentFile(audio_data), save=True)
-
-        # Step 2 – try cloud upload
+        """Save synthesised audio. Try cloud first, fallback to local."""
+        
+        # Step 1 – try cloud upload first (to avoid read-only file system errors)
         try:
             if cloud_storage.is_available():
                 remote_url = cloud_storage.upload_voice_output_file(
@@ -39,44 +31,29 @@ class TranslationOrchestrator:
                     user_id=str(user_id)
                 )
                 if remote_url:
-                    # Store the public cloud URL
                     translation_record.translated_audio_url = remote_url
-
-                    # Step 3 – remove the now-redundant local file
-                    local_path = translation_record.translated_audio.path
-                    try:
-                        if os.path.exists(local_path):
-                            os.remove(local_path)
-                            logger.info(f"Deleted local audio file after cloud upload: {local_path}")
-                    except OSError as exc:
-                        logger.warning(f"Could not delete local audio file {local_path}: {exc}")
-
-                    # Clear the FileField so we don't reference a deleted file
                     translation_record.translated_audio.name = None
                     translation_record.save(update_fields=['translated_audio', 'translated_audio_url'])
                     return
                 else:
-                    logger.warning("Cloud upload returned no URL – keeping local file.")
-            else:
-                logger.info("Cloud storage not available – audio stored locally only.")
+                    logger.warning("Cloud upload returned no URL – falling back to local.")
         except Exception as exc:
-            logger.error(f"Cloud upload failed, keeping local file: {exc}")
+            logger.error(f"Cloud upload failed: {exc}")
+
+        # Step 2 – fallback to local storage
+        try:
+            translation_record.translated_audio.save(filename, ContentFile(audio_data), save=True)
+            logger.info(f"Audio saved locally to {translation_record.translated_audio.name}")
+        except Exception as e:
+            logger.error(f"Failed to save audio locally: {str(e)}")
 
     def _save_input_audio(self, translation_record: SpeechTranslation, audio_file: Any,
                           filename: str, user_id: str, language: str) -> None:
-        """Save input audio file.
-
-        1. Save to local FileField.
-        2. Upload to cloud if available.
-        3. Store cloud URL and delete local copy.
-        """
-        # Step 1 – save locally
-        translation_record.original_audio.save(filename, audio_file, save=True)
-
-        # Step 2 – try cloud upload
+        """Save input audio file. Try cloud first, fallback to local."""
+        
+        # Step 1 - try cloud upload first
         try:
             if cloud_storage.is_available():
-                # Ensure we are at the beginning of the file/bytes
                 if hasattr(audio_file, 'seek'):
                     audio_file.seek(0)
 
@@ -87,36 +64,23 @@ class TranslationOrchestrator:
                 )
                 if remote_url:
                     translation_record.original_audio_url = remote_url
-
-                    # Step 3 – remove the local copy
-                    local_path = translation_record.original_audio.path
-                    try:
-                        if os.path.exists(local_path):
-                            os.remove(local_path)
-                            logger.info(f"Deleted local input audio file: {local_path}")
-                    except OSError as exc:
-                        logger.warning(f"Could not delete local input audio {local_path}: {exc}")
-
                     translation_record.original_audio.name = None
                     translation_record.save(update_fields=['original_audio', 'original_audio_url'])
                     return
-                else:
-                    logger.warning("Cloud upload for input audio returned no URL.")
         except Exception as exc:
             logger.error(f"Input audio cloud upload failed: {exc}")
 
+        # Step 2 - fallback to local storage
+        try:
+            translation_record.original_audio.save(filename, audio_file, save=True)
+        except Exception as e:
+            logger.error(f"Failed to save input audio locally: {str(e)}")
+
     def _save_input_image(self, translation_record: ImageTranslation, image_file: Any,
                           filename: str, user_id: str, language: str) -> None:
-        """Save input image file.
-
-        1. Save to local ImageField.
-        2. Upload to cloud if available.
-        3. Store cloud URL and delete local copy.
-        """
-        # Step 1 – save locally
-        translation_record.original_image.save(filename, image_file, save=True)
-
-        # Step 2 – try cloud upload
+        """Save input image file. Try cloud first, fallback to local."""
+        
+        # Step 1 - try cloud upload
         try:
             if cloud_storage.is_available():
                 if hasattr(image_file, 'seek'):
@@ -129,21 +93,17 @@ class TranslationOrchestrator:
                 )
                 if remote_url:
                     translation_record.original_image_url = remote_url
-
-                    # Step 3 – remove the local copy
-                    local_path = translation_record.original_image.path
-                    try:
-                        if os.path.exists(local_path):
-                            os.remove(local_path)
-                            logger.info(f"Deleted local input image file: {local_path}")
-                    except OSError as exc:
-                        logger.warning(f"Could not delete local image {local_path}: {exc}")
-
                     translation_record.original_image.name = None
                     translation_record.save(update_fields=['original_image', 'original_image_url'])
                     return
         except Exception as exc:
             logger.error(f"Input image cloud upload failed: {exc}")
+
+        # Step 2 - fallback to local storage
+        try:
+            translation_record.original_image.save(filename, image_file, save=True)
+        except Exception as e:
+            logger.error(f"Failed to save input image locally: {str(e)}")
 
 
     def _log_usage(self, user, result: Dict[str, Any], function_performed: str, 

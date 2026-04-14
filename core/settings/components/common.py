@@ -249,7 +249,11 @@ STATIC_ROOT = 'staticfiles_build/static'
 
 # Media files
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+# Set MEDIA_ROOT to /tmp in serverless environments where the filesystem is read-only
+if config('VERCEL', default='False') == 'True' or config('RENDER', default='False') == 'True' or config('K_SERVICE', default=''):
+    MEDIA_ROOT = '/tmp'
+else:
+    MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
