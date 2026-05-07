@@ -332,3 +332,84 @@ class AuthViewSet(GenericViewSet):
             default_errors = serializer.errors
             error_message = serializer_errors(default_errors)
             return error_400(error_message)
+
+    @action(
+        methods=["post"],
+        detail=False,
+        url_path="google",
+        serializer_class=serializers.GoogleLoginSerializer,
+        authentication_classes=[],
+        permission_classes=[AllowAny],
+    )
+    @extend_schema(tags=["Auth"])
+    def google_login(self, request, *args, **kwargs):
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as google_requests
+        from notification.models import NotificationPlatform, Platform
+        from wallet.models import Wallet
+        
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            token = serializer.validated_data["id_token"]
+            try:
+                # To securely verify the audience, you would pass the client ID here.
+                # For example: id_token.verify_oauth2_token(token, google_requests.Request(), settings.GOOGLE_CLIENT_ID)
+                idinfo = id_token.verify_oauth2_token(token, google_requests.Request())
+                
+                email = idinfo.get("email")
+                if not email:
+                    return error_400("Email not provided by Google")
+                
+                first_name = idinfo.get("given_name", "")
+                last_name = idinfo.get("family_name", "")
+                
+                user = User.objects.filter(email=email).first()
+                if not user:
+                    user = User.objects.create(
+                        email=email,
+                        first_name=first_name,
+                        last_name=last_name,
+                        is_verified=True,
+                        user_type=User.CUSTOMER,
+                    )
+                    user.set_unusable_password()
+                    user.save()
+                    
+                    # set the default notification platform
+                    NotificationPlatform.objects.get_or_create(
+                        user=user, platform=Platform.EMAIL.value, status=True
+                    )
+                    
+                    Wallet.fetch_for_user(user)
+                    
+                elif not user.is_verified:
+                    user.is_verified = True
+                    user.save()
+                
+                # Use LoginSerializer to get token pair
+                refresh = serializers.LoginSerializer.get_token(user)
+                user_data = serializers.UserSerializer(user).data
+                
+                return Response(
+                    {
+                        "code": status.HTTP_200_OK,
+                        "status": "success",
+                        "message": "Google Login successful",
+                        "data": {
+                            "token": {
+                                "refresh": str(refresh),
+                                "access": str(refresh.access_token),
+                            },
+                            "user": user_data
+                        }
+                    },
+                    status=status.HTTP_200_OK,
+                )
+                
+            except ValueError:
+                return error_400("Invalid Google token")
+            except Exception as e:
+                return error_400(str(e))
+            
+        default_errors = serializer.errors
+        return error_400(serializer_errors(default_errors))

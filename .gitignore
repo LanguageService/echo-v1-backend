@@ -39,3 +39,13 @@ db.sqlite3
 core/media/*
 
 core/__pycache__/*
+
+*/*/*/__pycache__/*
+
+*/*/__pycache__/*
+*/__pycache__/*
+
+users/serializers/__pycache__/*
+users/views/__pycache__/*
+users/models/__pycache__/*
+

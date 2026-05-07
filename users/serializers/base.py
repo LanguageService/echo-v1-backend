@@ -113,3 +113,7 @@ class ResetPasswordSerializer(serializers.Serializer):
 class ConfirmResetTokenSerializer(serializers.Serializer):
     otp_code = serializers.CharField()
     email = serializers.EmailField(required=False)
+
+
+class GoogleLoginSerializer(serializers.Serializer):
+    id_token = serializers.CharField()
