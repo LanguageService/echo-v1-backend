@@ -49,3 +49,12 @@ users/serializers/__pycache__/*
 users/views/__pycache__/*
 users/models/__pycache__/*
 
+
+# Testing and Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build
+staticfiles_build/
+

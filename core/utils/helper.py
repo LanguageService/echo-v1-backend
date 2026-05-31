@@ -7,8 +7,6 @@ from django.conf import settings
 from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import ValidationError
 
-from notification.services.email import send_email
-
 
 def get_slug(name):
     return name.replace(" ", "-").lower() if name else ""
@@ -65,19 +63,3 @@ def validate_phone(value):
 
 def custom_normalize_email(email):
     return email.strip().lower()
-
-
-def send_token(email, otp_obj, username=None):
-    token_type = otp_obj.token_type
-    token = otp_obj.token
-    salutation = f"Dear {username}" if username else "Good day"
-
-    body = f"""
-    {salutation},
-
-    Your {token_type.lower()} code is {token}. Please ignore if you did not request for this. 
-    """
-
-    send_email(
-        recipient=email, subject=f"{token_type} One Time Password", body_html=body
-    )

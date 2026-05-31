@@ -22,6 +22,7 @@ from .serializers import (
 )
 from utils.error_handler import ErrorHandler
 from translation.cloud_storage import cloud_storage
+from notification.services.email import EmailDispatcher
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,18 @@ class OcrViewSet(viewsets.ModelViewSet):
                 processing_result['error_message'],
                 status.HTTP_200_OK
             )
+            
+        # Send notification to the user
+        try:
+            EmailDispatcher.send_document_done(
+                user=request.user,
+                doc_name=original_filename,
+                result_url=None,  # Or set to frontend dashboard URL if we had one here
+                page_count=processing_result.get('word_count', 0), # Using word count as proxy if page count isn't explicitly available
+                processing_time=processing_result['processing_time']
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send document completion email: {e}")
 
         return ErrorHandler.success_response(
             response_data,

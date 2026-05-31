@@ -10,7 +10,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
 from drf_spectacular.utils import extend_schema
 
-from core.utils import error_400, send_token, serializer_errors,error_401
+from core.utils import error_400, serializer_errors, error_401
+from notification.services.email import EmailDispatcher
 from .. import choices, models, serializers
 
 
@@ -58,7 +59,7 @@ class AuthViewSet(GenericViewSet):
     def send_activation_mail(self, user):
         otp_obj = models.OneTimePassword.generate_otp(user.email)
         print(f"OTP: {otp_obj.token}")
-        send_token(user.email, otp_obj, user.first_name)
+        EmailDispatcher.send_verification(user, otp_code=otp_obj.token)
         return otp_obj.token
 
     @action(
@@ -169,12 +170,12 @@ class AuthViewSet(GenericViewSet):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data["email"]
-            if not User.objects.filter(email=email, is_verified=False).exists():
+            user = User.objects.filter(email=email, is_verified=False).first()
+            if not user:
                 return error_400("User with email does not exist")
 
             otp = models.OneTimePassword.generate_otp(email)
-            # TODO: Send email to user
-            send_token(email, otp)
+            EmailDispatcher.send_verification(user, otp_code=otp.token)
             return Response(
                 {
                     "code": status.HTTP_200_OK,
@@ -225,6 +226,10 @@ class AuthViewSet(GenericViewSet):
             if not success:
                 return error_400(msg)
 
+            user = User.objects.filter(email=email).first()
+            if user:
+                EmailDispatcher.send_onboarding(user)
+
             return Response(
                 {
                     "code": 200,
@@ -251,12 +256,16 @@ class AuthViewSet(GenericViewSet):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data["email"]
+            user = User.objects.filter(email=email).first()
+            if not user:
+                return error_400("User with this email does not exist")
+                
             otp_obj = models.OneTimePassword.generate_otp(
                 email,
                 token_type=choices.TokenType.RESET_PASSWORD,
             )
 
-            send_token(email, otp_obj)
+            EmailDispatcher.send_password_reset(user, otp_code=otp_obj.token)
             return Response(
                 {
                     "code": status.HTTP_200_OK,
@@ -381,6 +390,9 @@ class AuthViewSet(GenericViewSet):
                     )
                     
                     Wallet.fetch_for_user(user)
+                    
+                    # Send welcome email for new Google Auth users
+                    EmailDispatcher.send_onboarding(user)
                     
                 elif not user.is_verified:
                     user.is_verified = True

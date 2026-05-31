@@ -1,0 +1,84 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Verify your ECHO email address{% endblock %}
+
+{% block content %}
+
+  <!-- ── Heading ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center" style="padding-bottom:28px;">
+        <div style="font-size:44px;margin-bottom:12px;">✉️</div>
+        <h1 style="margin:0 0 8px;font-size:26px;font-weight:800;color:#1f2937;">
+          Verify your email address
+        </h1>
+        <p style="margin:0;font-size:15px;color:#6b7280;line-height:1.6;">
+          Hi {{ full_name }}, use the code below to verify your ECHO account.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── OTP Code Block ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0"
+               style="background:#f5f3ff;border:2px solid #ddd6fe;border-radius:16px;padding:28px 48px;">
+          <tr>
+            <td align="center">
+              <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:2px;
+                         color:#7C3AED;text-transform:uppercase;">
+                Verification Code
+              </p>
+              <p style="margin:0;font-size:44px;font-weight:800;letter-spacing:12px;
+                         color:#1f2937;font-family:'Courier New',Courier,monospace;">
+                {{ otp_code }}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Expiry badge ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+    <tr>
+      <td align="center">
+        <span style="display:inline-block;background:#fef3c7;color:#92400e;border-radius:50px;
+                     font-size:13px;font-weight:600;padding:6px 18px;">
+          ⏱ Expires in {{ expiry_minutes }} minutes
+        </span>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Instructions ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+    <tr>
+      <td style="font-size:14px;color:#6b7280;line-height:1.7;text-align:center;">
+        <p style="margin:0 0 8px;">
+          Enter this code in the app to verify your email and activate your account.
+        </p>
+        <p style="margin:0;">
+          Do not share this code with anyone.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Security notice ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="background:#fef2f2;border-left:4px solid #fca5a5;border-radius:0 8px 8px 0;
+                 padding:14px 18px;">
+        <p style="margin:0;font-size:13px;color:#7f1d1d;line-height:1.5;">
+          🔒 <strong>Security notice:</strong> If you didn't create an ECHO account,
+          you can safely ignore this email. No action is needed.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+{% endblock %}

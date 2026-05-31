@@ -1,0 +1,15 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Document Processing Complete{% endblock %}
+
+{% block content %}
+<h2>Your document is ready!</h2>
+<p>Hi {{ full_name }},</p>
+<p>We've successfully finished processing <strong>{{ doc_name }}</strong>.</p>
+<ul>
+    <li>Pages processed: {{ page_count }}</li>
+    <li>Time taken: {{ processing_time }} seconds</li>
+</ul>
+<p>You can view the results on your dashboard.</p>
+<a href="{{ result_url }}" class="button">View Results</a>
+{% endblock %}

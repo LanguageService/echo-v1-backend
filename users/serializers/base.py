@@ -3,8 +3,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions, serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from notification.services.email import EmailDispatcher
 
-from core.utils import send_token
 from ..choices import TokenType
 from ..models import OneTimePassword
 
@@ -46,7 +46,7 @@ class LoginSerializer(TokenObtainPairSerializer):
                 attrs["email"], token_type=TokenType.LOGIN
             )
             print(f"OTP:{otp_obj.token} email: {email}")
-            send_token(email, otp_obj)
+            EmailDispatcher.send_verification(user, otp_code=otp_obj.token)
         
         # Only generate token if verified
         else:
