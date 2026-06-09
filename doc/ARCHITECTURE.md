@@ -106,10 +106,10 @@ BaseTTSProvider         → synthesize(text, lang, voice) → { audio_data (WAV 
 
 | Purpose | Model | Key Notes |
 |---|---|---|
-| ASR (Speech → Text) | `gemini-2.0-flash` | Accepts audio/wav bytes or public URL |
-| NMT (Text → Text) | `gemini-2.0-flash` | Prompt-based translation |
+| ASR (Speech → Text) | `gemini-2.5-flash` | Accepts audio/wav bytes or public URL |
+| NMT (Text → Text) | `gemini-2.5-flash` | Prompt-based translation |
 | TTS (Text → Speech) | `gemini-2.5-flash-preview-tts` | Returns 24kHz 16-bit mono PCM; wrapped in WAV header by `_pcm_to_wav()` |
-| OCR + Translate (Image) | `gemini-2.0-flash` (Vision) | Inline image bytes, single-pass OCR + translation |
+| OCR + Translate (Image) | `gemini-2.5-flash` (Vision) | Inline image bytes, single-pass OCR + translation |
 
 > **Important:** Gemini TTS returns raw PCM audio — not a WAV file. The `GeminiTTSProvider._pcm_to_wav()` method wraps it in a RIFF WAV container before saving, making it playable by any audio player.
 

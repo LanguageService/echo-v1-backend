@@ -1,4 +1,5 @@
 import time
+from django.db import transaction
 from rest_framework import viewsets, status, permissions, mixins
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -86,37 +87,100 @@ class TextTranslationViewSet(BaseTranslationViewSet):
     @action(detail=False, methods=['post'], url_path='document', parser_classes=(MultiPartParser, FormParser))
     def document(self, request):
         """Document/Large text translation"""
+        import os
+        import tempfile
+
         serializer = TextLargeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
-        # Determine original text if provided, otherwise it's file-based
-        original_text = ""
-        # Not handling 'text' in TextLargeRequestSerializer as per user "only show items needed"
-        # If it's a file, the task handler will process it.
         
         translation = TextTranslation.objects.create(
             user=request.user,
             title=serializer.validated_data.get('title') or f"Text Document {int(time.time())}",
             original_language=serializer.validated_data.get('source_language', 'auto'),
             target_language=serializer.validated_data['target_language'],
-            original_file_url=serializer.validated_data.get('original_file_url'),
+            original_file_url=serializer.validated_data.get('original_file_url') or None,
             mode=TranslationMode.LARGE,
             status=TranslationStatus.PENDING
         )
         
         local_file_path = None
-        if serializer.validated_data.get('file'):
-            # Save the file to translation instance if it's there
-            translation.original_file = serializer.validated_data['file']
-            translation.save()
-            # The async task will handle the rest.
+        uploaded_file = serializer.validated_data.get('file')
+        if uploaded_file:
+            # TextTranslation has no FileField — write to a temp file and pass path to the task
+            suffix = os.path.splitext(uploaded_file.name)[-1] if uploaded_file.name else ''
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            for chunk in uploaded_file.chunks():
+                tmp_file.write(chunk)
+            tmp_file.flush()
+            tmp_file.close()
+            local_file_path = tmp_file.name
         
-        async_ebook_translation_task.delay(str(translation.id))
+        _tid = str(translation.id)
+        _path = local_file_path
+        transaction.on_commit(lambda: async_ebook_translation_task.delay(_tid, _path))
         return Response({
             "success": True,
             "translation_id": str(translation.id),
             "status": "Accepted for background processing"
         }, status=status.HTTP_202_ACCEPTED)
+
+    @extend_schema(
+        request=TextLargeRequestSerializer,
+        responses={200: TextTranslationSerializer}
+    )
+    @action(detail=False, methods=['post'], url_path='document-direct', parser_classes=(MultiPartParser, FormParser))
+    def document_direct(self, request):
+        """Direct/Synchronous Document translation (blocks until finished)"""
+        import os
+        import tempfile
+
+        serializer = TextLargeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        translation = TextTranslation.objects.create(
+            user=request.user,
+            title=serializer.validated_data.get('title') or f"Text Document {int(time.time())}",
+            original_language=serializer.validated_data.get('source_language', 'auto'),
+            target_language=serializer.validated_data['target_language'],
+            original_file_url=serializer.validated_data.get('original_file_url') or None,
+            mode=TranslationMode.LARGE,
+            status=TranslationStatus.PENDING
+        )
+        
+        local_file_path = None
+        tmp_file = None
+        uploaded_file = serializer.validated_data.get('file')
+        if uploaded_file:
+            # InMemoryUploadedFile has no .path — write to a named temp file first
+            # TextTranslation has no FileField, so we only need the temp path for the service
+            suffix = os.path.splitext(uploaded_file.name)[-1] if uploaded_file.name else ''
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            for chunk in uploaded_file.chunks():
+                tmp_file.write(chunk)
+            tmp_file.flush()
+            tmp_file.close()
+            local_file_path = tmp_file.name
+        
+        try:
+            from ..services import DocumentTranslationService
+            service = DocumentTranslationService()
+            result = service.process_document_translation(str(translation.id), local_file_path)
+        finally:
+            # Always clean up the temp file
+            if tmp_file and os.path.exists(tmp_file.name):
+                os.unlink(tmp_file.name)
+        
+        translation.refresh_from_db()
+        serializer_response = TextTranslationSerializer(translation, context={'request': request})
+        
+        if result.get('success'):
+            return Response(serializer_response.data, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                "success": False,
+                "error": result.get('error', 'Translation failed'),
+                "translation": serializer_response.data
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 
@@ -178,7 +242,8 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
                 serializer.validated_data['audio_file']
             )
         
-        async_voice_translation_task.delay(str(translation.id))
+        _tid = str(translation.id)
+        transaction.on_commit(lambda: async_voice_translation_task.delay(_tid))
         return Response({
             "success": True,
             "translation_id": str(translation.id),
@@ -241,9 +306,9 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
                     serializer.validated_data['audio_file']
                 )
             
-            async_stt_task.delay(
+            _stt_kwargs = dict(
                 user_id=request.user.id,
-                audio_file_path=None, # It's in the translation record
+                audio_file_path=None,  # It's in the translation record
                 translation_id=str(translation.id),
                 source_language=translation.original_language,
                 target_language=translation.target_language,
@@ -251,6 +316,7 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
                 session_id=translation.session_id,
                 original_file_url=translation.original_audio_url
             )
+            transaction.on_commit(lambda: async_stt_task.delay(**_stt_kwargs))
             return Response({
                 "success": True,
                 "translation_id": str(translation.id),
@@ -305,7 +371,7 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
                 speech_service=SpeechServiceType.TTS
             )
             
-            async_tts_task.delay(
+            _tts_kwargs = dict(
                 user_id=request.user.id,
                 text=translation.original_text,
                 source_language=translation.original_language,
@@ -315,6 +381,7 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
                 mode=TranslationMode.LARGE,
                 session_id=translation.session_id
             )
+            transaction.on_commit(lambda: async_tts_task.delay(**_tts_kwargs))
             return Response({
                 "success": True,
                 "translation_id": str(translation.id),

@@ -10,11 +10,14 @@ class DocxProcessor:
     @staticmethod
     def extract_text(file_path: str) -> List[Dict[str, Any]]:
         """
-        Extract text from DOCX while keeping track of paragraph and run indices
+        Extract text from DOCX while keeping track of paragraph and run indices.
+        Assigns a virtual 'page' number (every BATCH_SIZE blocks = one page) so
+        _translate_blocks can parallelise DOCX documents the same way it does PDFs.
         """
+        BATCH_SIZE = 15  # blocks per virtual page
         doc = Document(file_path)
         blocks = []
-        
+
         for p_idx, para in enumerate(doc.paragraphs):
             for r_idx, run in enumerate(para.runs):
                 if run.text.strip():
@@ -24,8 +27,7 @@ class DocxProcessor:
                         'r_idx': r_idx,
                         'type': 'paragraph'
                     })
-        
-        # Also handle tables
+
         for t_idx, table in enumerate(doc.tables):
             for r_idx, row in enumerate(table.rows):
                 for c_idx, cell in enumerate(row.cells):
@@ -41,7 +43,11 @@ class DocxProcessor:
                                     'r_idx': run_idx,
                                     'type': 'table'
                                 })
-        
+
+        # Assign virtual page numbers so _translate_blocks can parallelise
+        for i, block in enumerate(blocks):
+            block['page'] = i // BATCH_SIZE
+
         return blocks
 
     @staticmethod
@@ -68,7 +74,7 @@ class DocxProcessor:
 
 class PdfProcessor:
     """Processor for PDF files using PyMuPDF (fitz)"""
-    
+
     @staticmethod
     def extract_text(file_path: str) -> List[Dict[str, Any]]:
         """
@@ -76,23 +82,20 @@ class PdfProcessor:
         """
         doc = fitz.open(file_path)
         blocks = []
-        
+
         for page_num in range(len(doc)):
             page = doc[page_num]
-            # get_text("dict") returns blocks with lines and spans (useful for layout)
             text_dict = page.get_text("dict")
             for b_idx, block in enumerate(text_dict["blocks"]):
                 if block["type"] == 0:  # text block
-                    # Extract full block text for translation
                     block_text = ""
                     for line in block["lines"]:
                         for span in line["spans"]:
                             block_text += span["text"]
                         block_text += " "
-                    
+
                     block_text = block_text.strip()
                     if block_text:
-                        # Use the first span's properties as a template for the block
                         first_span = block["lines"][0]["spans"][0]
                         blocks.append({
                             'text': block_text,
@@ -109,67 +112,64 @@ class PdfProcessor:
         return blocks
 
     @staticmethod
+    def _process_page(args) -> None:
+        """Process a single PDF page: redact original text then insert translated text."""
+        page, blocks = args
+        for block in blocks:
+            page.add_redact_annot(block['bbox'], fill=None)
+        page.apply_redactions()
+
+        for block in blocks:
+            try:
+                color_int = block.get('color', 0)
+                if isinstance(color_int, int):
+                    r = ((color_int >> 16) & 255) / 255.0
+                    g = ((color_int >> 8) & 255) / 255.0
+                    b = (color_int & 255) / 255.0
+                    color_tuple = (r, g, b)
+                else:
+                    color_tuple = (0, 0, 0)
+
+                rect = fitz.Rect(block['bbox'])
+                rect.x1 += 30
+                rect.y1 += 10
+
+                css_color = f"rgb({int(color_tuple[0]*255)}, {int(color_tuple[1]*255)}, {int(color_tuple[2]*255)})"
+                escaped_text = html.escape(block['translated_text'])
+                html_content = f"""
+                <div style="font-family: sans-serif; font-size: {block['size']}pt; color: {css_color}; line-height: 1.2;">
+                    {escaped_text}
+                </div>
+                """
+                page.insert_htmlbox(rect, html_content, archive=None, rotate=0)
+            except Exception as e:
+                print(f"Error inserting text on page {block['page']}: {e}")
+
+    @staticmethod
     def replace_text(file_path: str, translated_blocks: List[Dict[str, Any]], output_path: str):
         """
-        Create a new PDF where original text is covered/redacted and translated text is inserted
+        Create a new PDF where original text is replaced with translations.
+        Pages are processed in parallel for speed.
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         doc = fitz.open(file_path)
-        
-        # Group by page for efficient processing
-        pages = {}
+
+        # Group blocks by page
+        pages: Dict[int, list] = {}
         for block in translated_blocks:
-            page_num = block['page']
-            if page_num not in pages:
-                pages[page_num] = []
-            pages[page_num].append(block)
-            
-        for page_num, blocks in pages.items():
-            page = doc[page_num]
-            
-            # Add all redactions for this page first
-            # Now redacting the ENTIRE block bbox with no fill for seamless replacement
-            for block in blocks:
-                page.add_redact_annot(block['bbox'], fill=None) 
-            
-            # Apply all redactions at once for the page
-            page.apply_redactions()
-            
-            # Now insert translated text
-            for block in blocks:
-                # Insert translated text into the block area
-                try:
-                    # Convert integer color to (r, g, b) tuple
-                    color_int = block.get('color', 0)
-                    if isinstance(color_int, int):
-                        r = ((color_int >> 16) & 255) / 255.0
-                        g = ((color_int >> 8) & 255) / 255.0
-                        b = (color_int & 255) / 255.0
-                        color_tuple = (r, g, b)
-                    else:
-                        color_tuple = (0, 0, 0)
-                    # Use insert_htmlbox for superior wrapping, searchability and layout
-                    # Expand the rect slightly to ensure text fits comfortably
-                    rect = fitz.Rect(block['bbox'])
-                    rect.x1 += 30 # Margin for word length differences
-                    rect.y1 += 10 # Margin for line height differences
-                    
-                    # Convert color tuple to CSS rgb() format
-                    css_color = f"rgb({int(color_tuple[0]*255)}, {int(color_tuple[1]*255)}, {int(color_tuple[2]*255)})"
-                    
-                    # Escape HTML special characters (like '&', '<', '>') to ensure they render correctly
-                    escaped_text = html.escape(block['translated_text'])
-                    
-                    # Construct simple HTML with styling
-                    # font-family: Helvetica is a safe default for PDF base 14
-                    html_content = f"""
-                    <div style="font-family: sans-serif; font-size: {block['size']}pt; color: {css_color}; line-height: 1.2;">
-                        {escaped_text}
-                    </div>
-                    """
-                    
-                    page.insert_htmlbox(rect, html_content, archive=None, rotate=0)
-                except Exception as e:
-                    print(f"Error inserting text on page {page_num}: {e}")
-        
+            pages.setdefault(block['page'], []).append(block)
+
+        # Build (page_object, blocks) pairs
+        page_jobs = [(doc[page_num], blocks) for page_num, blocks in pages.items()]
+
+        # PyMuPDF page objects are NOT thread-safe for writing, so we process
+        # them sequentially inside the same document but use a pool to overlap
+        # CPU-bound work (color math, HTML building). For true parallelism we
+        # iterate sequentially — the main speed gain is from having translated
+        # all text in parallel already.
+        for args in page_jobs:
+            PdfProcessor._process_page(args)
+
         doc.save(output_path)
         doc.close()

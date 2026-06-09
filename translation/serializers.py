@@ -108,40 +108,52 @@ class TextShortRequestSerializer(serializers.Serializer):
 
 class TextLargeRequestSerializer(serializers.Serializer):
     file = serializers.FileField(required=False, allow_null=True)
-    original_file_url = serializers.URLField(required=False, allow_null=True)
+    original_file_url = serializers.URLField(required=False, allow_null=True, allow_blank=True, default='')
     target_language = serializers.CharField(max_length=10, default='en')
     source_language = serializers.CharField(max_length=10, default='auto')
     title = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate(self, data):
-        if not data.get('file') and not data.get('original_file_url'):
+        file = data.get('file')
+        url = data.get('original_file_url') or None  # treat "" same as None
+        if not file and not url:
             raise serializers.ValidationError("Either file or original_file_url is required for document translation")
+        if not url:
+            data.pop('original_file_url', None)
         return data
 
 # Speech Request Serializers
 class SpeechShortRequestSerializer(serializers.Serializer):
     audio_file = serializers.FileField(required=False, allow_null=True)
-    original_file_url = serializers.URLField(required=False, allow_null=True)
+    original_file_url = serializers.URLField(required=False, allow_null=True, allow_blank=True, default='')
     target_language = serializers.CharField(max_length=10, default='en')
     source_language = serializers.CharField(max_length=10, default='auto')
     speech_service = serializers.ChoiceField(choices=SpeechServiceType.choices, default=SpeechServiceType.STS)
 
     def validate(self, data):
-        if not data.get('audio_file') and not data.get('original_file_url'):
+        audio_file = data.get('audio_file')
+        url = data.get('original_file_url') or None
+        if not audio_file and not url:
             raise serializers.ValidationError("Either audio_file or original_file_url is required")
+        if not url:
+            data.pop('original_file_url', None)
         return data
 
 class SpeechLargeRequestSerializer(serializers.Serializer):
     audio_file = serializers.FileField(required=False, allow_null=True)
-    original_file_url = serializers.URLField(required=False, allow_null=True)
+    original_file_url = serializers.URLField(required=False, allow_null=True, allow_blank=True, default='')
     target_language = serializers.CharField(max_length=10, default='en')
     source_language = serializers.CharField(max_length=10, default='auto')
     speech_service = serializers.ChoiceField(choices=SpeechServiceType.choices, default=SpeechServiceType.STS)
     title = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate(self, data):
-        if not data.get('audio_file') and not data.get('original_file_url'):
+        audio_file = data.get('audio_file')
+        url = data.get('original_file_url') or None
+        if not audio_file and not url:
             raise serializers.ValidationError("Either audio_file or original_file_url is required")
+        if not url:
+            data.pop('original_file_url', None)
         return data
 
 class ImageTranslationRequestSerializer(serializers.Serializer):
@@ -153,12 +165,16 @@ class STTRequestSerializer(serializers.Serializer):
     source_language = serializers.CharField(max_length=10, default='auto')
     target_language = serializers.CharField(max_length=10, default='auto')
     session_id = serializers.CharField(required=False, allow_blank=True)
-    original_file_url = serializers.URLField(required=False, allow_null=True)
+    original_file_url = serializers.URLField(required=False, allow_null=True, allow_blank=True, default='')
     mode = serializers.ChoiceField(choices=['SHORT', 'LARGE'], default='SHORT')
 
     def validate(self, data):
-        if not data.get('audio_file') and not data.get('original_file_url'):
+        audio_file = data.get('audio_file')
+        url = data.get('original_file_url') or None
+        if not audio_file and not url:
             raise serializers.ValidationError("Either audio_file or original_file_url is required")
+        if not url:
+            data.pop('original_file_url', None)
         return data
 
 class TTSRequestSerializer(serializers.Serializer):

@@ -165,21 +165,47 @@ class CloudStorageService:
                 # Fallback to simple string cleanup or hash if needed
                 return user_id.replace('-', '')
     
+    def _local_store(self, file_name: str, file_content: bytes, sub_path: str) -> Optional[str]:
+        """
+        Store a file locally under MEDIA_ROOT when ENV_MODE=local.
+        Returns the full URL using MEDIA_URL.
+        """
+        import shutil
+        from django.conf import settings
+
+        rel_path = os.path.join('cloud_local', sub_path, file_name)
+        abs_path = os.path.join(settings.MEDIA_ROOT, rel_path)
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+        with open(abs_path, 'wb') as f:
+            f.write(file_content)
+
+        # Build a full URL that works in local dev
+        base = config('LOCAL_BASE_URL', default='http://localhost:8000')
+        media_url = getattr(settings, 'MEDIA_URL', '/media/')
+        url = f"{base.rstrip('/')}{media_url}{rel_path}"
+        logger.info(f"[local] Stored file at {abs_path} → {url}")
+        return url
+
     def upload_voice_input_file(self, file: UploadedFile, language: str, user_id: str) -> Optional[str]:
         """
         Upload voice input file to cloud storage
         Path: translation/voice/input/{language}/{user_id}_{timestamp}_{uuid}.{ext}
         """
-        if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
-            
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'audio'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
+
+        if config("ENV_MODE", default="prod") == "local":
+            content = file.read() if hasattr(file, 'read') else b''
+            return self._local_store(filename, content, 'speech/input')
+
+        if not self.is_available():
+            logger.warning("Cloud storage not available")
+            return None
+
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/speech/{filename}"
-        
         return self._upload_file(file, folder_path)
     
     def upload_voice_output_file(self, file_content: bytes, language: str, user_id: str, file_format: str = 'wav') -> Optional[str]:
@@ -187,15 +213,18 @@ class CloudStorageService:
         Upload voice output file to cloud storage
         Path: voice/output/{language}/{user_id}_{timestamp}_{uuid}.{ext}
         """
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
+
+        if config("ENV_MODE", default="prod") == "local":
+            return self._local_store(filename, file_content, 'speech/output')
+
         if not self.is_available():
             logger.warning("Cloud storage not available")
             return None
-            
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
+
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/speech/{filename}"
-        
         return self._upload_bytes(file_content, folder_path)
     
     def upload_image_input_file(self, file: UploadedFile, language: str, user_id: str) -> Optional[str]:
@@ -203,16 +232,20 @@ class CloudStorageService:
         Upload image input file to cloud storage
         Path: translation/image/input/{language}/{user_id}_{timestamp}_{uuid}.{ext}
         """
-        if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
-            
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'jpg'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
+
+        if config("ENV_MODE", default="prod") == "local":
+            content = file.read() if hasattr(file, 'read') else b''
+            return self._local_store(filename, content, 'image/input')
+
+        if not self.is_available():
+            logger.warning("Cloud storage not available")
+            return None
+
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/image/{filename}"
-        
         return self._upload_file(file, folder_path)
     
     def upload_document_input_file(self, file: UploadedFile, language: str, user_id: str) -> Optional[str]:
@@ -220,16 +253,20 @@ class CloudStorageService:
         Upload document input file to cloud storage
         Path: translation/document/input/{language}/{user_id}_{timestamp}_{uuid}.{ext}
         """
-        if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
-            
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'doc'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
+
+        if config("ENV_MODE", default="prod") == "local":
+            content = file.read() if hasattr(file, 'read') else b''
+            return self._local_store(filename, content, 'text/input')
+
+        if not self.is_available():
+            logger.warning("Cloud storage not available")
+            return None
+
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/text/{filename}"
-        
         return self._upload_file(file, folder_path)
 
     def upload_document_output_file(self, file_path: str, language: str, user_id: str, file_format: str) -> Optional[str]:
@@ -237,19 +274,24 @@ class CloudStorageService:
         Upload document output file to cloud storage
         Path: translation/document/output/{language}/{user_id}_{timestamp}_{uuid}.{ext}
         """
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
+
+        if config("ENV_MODE", default="prod") == "local":
+            with open(file_path, 'rb') as f:
+                content = f.read()
+            return self._local_store(filename, content, 'text/output')
+
         if not self.is_available():
             logger.warning("Cloud storage not available")
             return None
-            
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
+
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/text/{filename}"
-        
+
         with open(file_path, 'rb') as f:
             from django.core.files.base import ContentFile
             content_file = ContentFile(f.read(), name=filename)
-            # Determine content type
             content_type = 'application/pdf' if file_format.lower() == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             content_file.content_type = content_type
             return self._upload_file(content_file, folder_path)
@@ -274,11 +316,16 @@ class CloudStorageService:
                 return f"https://storage.googleapis.com/{bucket_name}/{folder_path}"
             
             elif self.config.provider == 'cloudinary':
-                 # Cloudinary handles buckets via cloud_name, folder structure via public_id
-                # but we can optionally use folders
+                # Cloudinary handles buckets via cloud_name, folder structure via public_id.
+                # Cloudinary appends the format extension to the URL automatically, so we must
+                # strip the extension from public_id to avoid double extensions like .pdf.pdf
+                public_id = folder_path
+                if '.' in public_id.split('/')[-1]:
+                    public_id = public_id.rsplit('.', 1)[0]
+
                 response = cloudinary.uploader.upload(
-                    file, 
-                    public_id=folder_path, # Using path as public ID for structure
+                    file,
+                    public_id=public_id,
                     resource_type="auto"
                 )
                 return response.get('secure_url')

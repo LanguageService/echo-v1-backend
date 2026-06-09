@@ -130,7 +130,7 @@ class TranslationOrchestrator:
             log_entry = LLMLog.objects.create(
                 user=user if user and not user.is_anonymous else None,
                 provider=result.get('provider', 'Google'),
-                model_name=result.get('model', 'gemini-2.0-flash'),
+                model_name=result.get('model', 'gemini-2.5-flash'),
                 function_performed=function_performed,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -577,7 +577,7 @@ class TranslationOrchestrator:
             # ideally this should also be a provider but let's log it manually
             start_ai = time.time()
             response = client.models.generate_content(
-                model="gemini-2.0-flash", 
+                model="gemini-2.5-flash", 
                 contents=[
                     types.Part.from_bytes(data=image_data, mime_type="image/png"),
                     prompt
@@ -598,7 +598,7 @@ class TranslationOrchestrator:
                 'success': True,
                 'usage': usage,
                 'processing_time': ai_latency,
-                'model': 'gemini-2.0-flash',
+                'model': 'gemini-2.5-flash',
                 'provider': 'Google'
             }, 'Image', translation_record)
             

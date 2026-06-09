@@ -13,7 +13,7 @@ client = genai.Client(api_key=settings.GEMINI_API_KEY)
 class GeminiTranslationProvider(BaseTranslationProvider):
     """Gemini-based Text Translation provider"""
     
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         self.model = model
     
     def translate(self, text: str, source_lang: str, target_lang: str) -> Dict[str, Any]:

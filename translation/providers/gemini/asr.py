@@ -14,7 +14,7 @@ client = genai.Client(api_key=settings.GEMINI_API_KEY)
 class GeminiASRProvider(BaseASRProvider):
     """Gemini-based Speech-to-Text (ASR) provider"""
     
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         self.model = model
     
     def transcribe(self, audio_file: Any, language: str = 'auto') -> Dict[str, Any]:

@@ -52,5 +52,5 @@ celery -A core worker -l info
 - **Redoc**: `/api/v1/redoc/`
 - **Admin**: `/admin/`
 
----
+
 © 2026 Echo Translation Systems

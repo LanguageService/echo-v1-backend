@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Set environment variables to prevent generating .pyc files and to run Python unbuffered
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -10,6 +10,12 @@ ENV PYTHONPATH /app
 
 # Set the working directory in the container
 WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install uv, the fast Python package installer
 RUN pip install uv

@@ -60,9 +60,9 @@ The flagship pipeline: user speaks → Echo transcribes → translates → synth
 ```
 [Audio Upload / WebSocket stream]
         ↓
-  Gemini ASR (gemini-2.0-flash)   → transcribed text
+  Gemini ASR (gemini-2.5-flash)   → transcribed text
         ↓
-  Gemini NMT (gemini-2.0-flash)   → translated text
+  Gemini NMT (gemini-2.5-flash)   → translated text
         ↓
   Gemini TTS (gemini-2.5-flash-preview-tts) → WAV audio (24kHz, 16-bit, mono PCM + WAV header)
         ↓
@@ -102,7 +102,7 @@ Pure text translation between any two supported languages.
 #### 3.2.5 Image / OCR Translation
 Uploads an image; Echo extracts and translates all text within it.
 
-- Powered by Gemini Vision (`gemini-2.0-flash`)
+- Powered by Gemini Vision (`gemini-2.5-flash`)
 - Returns: `ocr_text` (original), `translated_text`
 - Original image stored to cloud
 
@@ -168,7 +168,7 @@ Persistent per-user preferences:
 
 | Setting | Options |
 |---|---|
-| AI Model | `gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`, `gemini-2.0-flash`, `gemini-1.5-flash` |
+| AI Model | `gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`, `gemini-2.5-flash`, `gemini-1.5-flash` |
 | Voice | Zephyr, Nova, Orbit, Echo, Breeze, Aria, Phoenix, Luna |
 | Auto-detect language | Boolean |
 | Source / Target language | ISO language code |

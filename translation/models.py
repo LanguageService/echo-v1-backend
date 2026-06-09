@@ -57,13 +57,13 @@ class BaseTranslation(BaseModel):
 
 class TextTranslation(BaseTranslation):
     """Model for text-to-text translations"""
-    original_text = models.TextField()
+    original_text = models.TextField(blank=True, null=True)
     translated_text = models.TextField(blank=True, null=True)
     is_sms = models.BooleanField(default=False, help_text="Whether this is an SMS translation")
     
     # Document fields for Large text translations
-    original_file_url = models.URLField(blank=True, null=True)
-    translated_file_url = models.URLField(blank=True, null=True)
+    original_file_url = models.URLField(blank=True, null=True, max_length=1000)
+    translated_file_url = models.URLField(blank=True, null=True, max_length=1000)
     
     
     def __str__(self):
@@ -117,7 +117,7 @@ class LLMLog(models.Model):
     """Log to track usage of LLM and AI services"""
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     provider = models.CharField(max_length=50) # e.g., 'Google'
-    model_name = models.CharField(max_length=100) # e.g., 'gemini-2.0-flash'
+    model_name = models.CharField(max_length=100) # e.g., 'gemini-2.5-flash'
     function_performed = models.CharField(max_length=50) # e.g., 'ASR', 'Translation', 'TTS', 'Image'
     input_tokens = models.IntegerField(default=0)
     output_tokens = models.IntegerField(default=0)
@@ -153,7 +153,7 @@ class UserSettings(BaseModel):
     AI_MODELS = [
         ('gemini-2.5-flash-preview-tts', 'Gemini 2.5 Flash (TTS)'),
         ('gemini-2.5-pro-preview-tts', 'Gemini 2.5 Pro (TTS)'),
-        ('gemini-2.0-flash', 'Gemini 2.0 Flash'),
+        ('gemini-2.5-flash', 'Gemini 2.5 Flash'),
         ('gemini-1.5-flash', 'Gemini 1.5 Flash'),
     ]
     

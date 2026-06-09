@@ -1,0 +1,110 @@
+# ── Shared environment ────────────────────────────────────────────────────────
+# Change ENV_MODE here and every service picks it up automatically.
+#
+#   local  → files saved to /app/media (mounted volume), URLs returned to DB
+#   dev    → files uploaded to cloud bucket (Cloudinary / S3 / GCS)
+#
+x-app-env: &app-env
+  ENV_MODE: ${ENV_MODE:-local}
+  DEBUG: "True"
+  SECRET_KEY: django-insecure-secret-key-for-local-compose
+  DATABASE_URL: postgresql://postgres:postgres@db:5432/echo_db
+  DATABASE_HOST: db
+  DATABASE_PORT: "5432"
+  DATABASE_USER: postgres
+  DATABASE_NAME: echo_db
+  DATABASE_PASSWORD: postgres
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  # Used by _local_store to build the public URL when ENV_MODE=local
+  LOCAL_BASE_URL: http://localhost:8000
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: echo_db
+    environment:
+      POSTGRES_DB: echo_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      # 5433 on host avoids conflict with a local Postgres already on 5432.
+      # Inter-container traffic still uses db:5432 via the Docker network.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: echo_redis
+    ports:
+      # 6380 on host avoids conflict with a local Redis already on 6379.
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: echo_web
+    command: daphne -b 0.0.0.0 -p 8000 core.asgi:application
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+      - static_volume:/app/staticfiles_build
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build: .
+    container_name: echo_celery_worker
+    command: celery -A core worker -l info
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build: .
+    container_name: echo_celery_beat
+    command: celery -A core beat -l info
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  media_volume:
+  static_volume:

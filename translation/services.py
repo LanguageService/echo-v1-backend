@@ -1019,9 +1019,13 @@ class DocumentTranslationService(GeminiService):
             status=TranslationStatus.PENDING
         )
 
-        # Step 3: Trigger background task with local path
+        # Step 3: Trigger background task AFTER the current transaction commits
+        # (avoids the race condition where the worker queries the DB before the row is committed)
         from .tasks import async_ebook_translation_task
-        async_ebook_translation_task.delay(str(translation_record.id), local_file_path)
+        from django.db import transaction as db_transaction
+        _tid = str(translation_record.id)
+        _path = local_file_path
+        db_transaction.on_commit(lambda: async_ebook_translation_task.delay(_tid, _path))
 
         return {
             'success': True,
@@ -1064,38 +1068,44 @@ class DocumentTranslationService(GeminiService):
                     'message': 'Starting document processing...'
                 })
 
-            # 2. Upload original file to cloud storage
+            # 2. Derive file name and extension from available sources
+            # TextTranslation has no FileField / file_format / original_filename attributes;
+            # derive them from the local path or the stored URL.
+            if local_file_path:
+                file_name = os.path.basename(local_file_path)
+            elif translation_record.original_file_url:
+                file_name = os.path.basename(translation_record.original_file_url.split('?')[0]) or 'document'
+            else:
+                file_name = 'document'
+
+            file_ext = file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else 'pdf'
+
+            # 3. Upload original file (local or cloud depending on ENV_MODE)
             if local_file_path and os.path.exists(local_file_path):
-                logger.info(f"Uploading original file {local_file_path} to cloud storage...")
+                logger.info(f"Uploading original file {local_file_path} ...")
                 try:
-                    # Save locally first
-                    from django.core.files import File
                     with open(local_file_path, 'rb') as f:
-                        django_file = File(f)
-                        django_file.name = translation_record.original_filename
-                        translation_record.original_file.save(django_file.name, django_file, save=True)
-                    
-                    # Upload to cloud explicitly
-                    if cloud_storage.is_available():
-                        with open(local_file_path, 'rb') as f:
-                            from django.core.files.base import ContentFile
-                            # Use ContentFile and add content_type for the cloud_storage service
-                            content_file = ContentFile(f.read(), name=translation_record.original_filename)
-                            content_file.content_type = 'application/pdf' if file_ext == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                            
-                            remote_url = cloud_storage.upload_document_input_file(
-                                file=content_file,
-                                language=translation_record.original_language or 'en',
-                                user_id=str(translation_record.user_id or 'anonymous')
-                            )
-                            if remote_url:
-                                translation_record.original_file_url = remote_url
-                                translation_record.save()
+                        from django.core.files.base import ContentFile
+                        content_file = ContentFile(f.read(), name=file_name)
+                        content_file.content_type = (
+                            'application/pdf' if file_ext == 'pdf'
+                            else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                        )
+                        original_url = cloud_storage.upload_document_input_file(
+                            file=content_file,
+                            language=translation_record.original_language or 'en',
+                            user_id=str(translation_record.user_id or 'anonymous')
+                        )
+                        if original_url:
+                            translation_record.original_file_url = original_url
+                            translation_record.save(update_fields=['original_file_url'])
+                            logger.info(f"Original file URL saved: {original_url}")
+                        else:
+                            logger.warning("original file upload returned no URL")
                 except Exception as e:
-                    logger.warning(f"Initial cloud upload for document failed: {e}")
+                    logger.warning(f"Initial upload for original document failed: {e}")
             
-            # 3. Setup processing environment
-            file_ext = translation_record.file_format
+            # 4. Setup processing environment
             target_language = translation_record.target_language
             source_language = translation_record.original_language
             
@@ -1108,7 +1118,7 @@ class DocumentTranslationService(GeminiService):
                 import tempfile
                 logger.info(f"Downloading original file from {translation_record.original_file_url}")
                 temp_dir = tempfile.mkdtemp()
-                local_file_path = os.path.join(temp_dir, translation_record.original_filename)
+                local_file_path = os.path.join(temp_dir, file_name)
                 
                 response = requests.get(translation_record.original_file_url, stream=True)
                 if response.status_code != 200:
@@ -1119,9 +1129,10 @@ class DocumentTranslationService(GeminiService):
                         f.write(chunk)
 
             with tempfile.TemporaryDirectory() as temp_dir:
-                output_path = os.path.join(temp_dir, f"output_{translation_record.original_filename}")
+                output_filename = f"output_{file_name}"
+                output_path = os.path.join(temp_dir, output_filename)
                 
-                # 4. Extract text
+                # 5. Extract text
                 if file_ext == 'pdf':
                     blocks = self.pdf_processor.extract_text(local_file_path)
                 else:
@@ -1130,7 +1141,7 @@ class DocumentTranslationService(GeminiService):
                 if not blocks:
                     raise Exception("No text found in document")
 
-                # 5. Detect language if needed
+                # 6. Detect language if needed
                 if source_language == 'auto' or not source_language:
                     sample_text = "\n".join([b['text'] for b in blocks[:5]])
                     detected_source_lang = self.translation_service._detect_language_with_ai(sample_text)
@@ -1138,54 +1149,47 @@ class DocumentTranslationService(GeminiService):
                 else:
                     detected_source_lang = source_language
 
-                # 6. Translate blocks (Parallel Processing)
+                # 7. Translate blocks (Parallel Processing)
                 translated_blocks = self._translate_blocks(blocks, target_language, source_lang=detected_source_lang)
 
-                # 7. Reconstruct document
+                # 8. Reconstruct document
                 if file_ext == 'pdf':
                     self.pdf_processor.replace_text(local_file_path, translated_blocks, output_path)
                 else:
                     self.docx_processor.replace_text(local_file_path, translated_blocks, output_path)
 
-                # 8. Save and Upload translated file
-                # Save locally first
-                from django.core.files import File
-                with open(output_path, 'rb') as f:
-                    django_output_file = File(f)
-                    django_output_file.name = f"translated_{translation_record.original_filename}"
-                    translation_record.translated_file.save(django_output_file.name, django_output_file, save=True)
-                
-                translated_url = translation_record.translated_file.url
-                
-                # Upload to cloud explicitly
-                if cloud_storage.is_available():
-                    try:
-                        remote_translated_url = cloud_storage.upload_document_output_file(
-                            file_path=output_path,
-                            language=target_language,
-                            user_id=str(translation_record.user_id or 'anonymous'),
-                            file_format=file_ext
-                        )
-                        if remote_translated_url:
-                            translated_url = remote_translated_url
-                            translation_record.translated_file_url = remote_translated_url
-                            # Clear local file if cloud upload was successful
-                            local_output_path = translation_record.translated_file.path
-                            if os.path.exists(local_output_path):
-                                os.remove(local_output_path)
-                            translation_record.translated_file.name = None
-                            translation_record.save()
-                    except Exception as e:
-                        logger.warning(f"Cloud upload for translated document failed: {e}")
+                # 9. Upload translated file
+                # upload_document_output_file handles both local (ENV_MODE=local) and cloud.
+                # Do NOT gate on is_available() — local mode bypasses that check internally.
+                translated_url = None
+                try:
+                    translated_url = cloud_storage.upload_document_output_file(
+                        file_path=output_path,
+                        language=target_language,
+                        user_id=str(translation_record.user_id or 'anonymous'),
+                        file_format=file_ext
+                    )
+                except Exception as e:
+                    logger.warning(f"Document upload failed: {e}")
 
-                # 9. Update record as COMPLETED
+                if not translated_url:
+                    logger.warning("Document upload returned no URL; translated_file_url will be empty")
+                else:
+                    logger.info(f"Translated file URL: {translated_url}")
+
+                # 10. Update record as COMPLETED
                 processing_time = time.time() - start_time
                 translation_record.translated_file_url = translated_url
                 translation_record.total_processing_time = processing_time
                 translation_record.status = TranslationStatus.COMPLETED
-                translation_record.save()
+                translation_record.original_language = detected_source_lang
+                translation_record.save(update_fields=[
+                    'translated_file_url', 'total_processing_time',
+                    'status', 'original_language'
+                ])
+                logger.info(f"Record {translation_id} marked COMPLETED. translated_file_url={translated_url}")
 
-                # 10. Final WebSocket update
+                # 11. Final WebSocket update
                 if translation_record.user:
                     send_websocket_update(translation_record.user.id, 'ebook', {
                         'type': 'task_complete',
@@ -1230,85 +1234,105 @@ class DocumentTranslationService(GeminiService):
 
     def _translate_blocks(self, blocks: List[Dict[str, Any]], target_lang: str, source_lang: str = 'auto') -> List[Dict[str, Any]]:
         """
-        Optimized parallel translation. Groups blocks by page and processes several pages concurrently.
+        Optimised parallel translation.
+        - Groups blocks by virtual page (set by extractor).
+        - Splits pages with >MAX_BLOCKS_PER_BATCH blocks into sub-batches.
+        - Translates all batches concurrently (up to max_workers threads).
+        - Retries with exponential back-off before falling back to block-by-block.
         """
+        MAX_BLOCKS_PER_BATCH = 25
+        MAX_WORKERS = 10
+        MAX_RETRIES = 3
+
         # Group blocks by page
-        pages = {}
+        pages: dict = {}
         for block in blocks:
-            page_num = block.get('page', 0)
-            if page_num not in pages:
-                pages[page_num] = []
-            pages[page_num].append(block)
+            pages.setdefault(block.get('page', 0), []).append(block)
+
+        # Split any oversized page into sub-batches
+        batches: List[tuple] = []  # (batch_key, block_list)
+        for page_num, page_blocks in pages.items():
+            for i in range(0, len(page_blocks), MAX_BLOCKS_PER_BATCH):
+                sub = page_blocks[i:i + MAX_BLOCKS_PER_BATCH]
+                batches.append((f"{page_num}_{i}", sub))
 
         source_name = self.translation_service._get_language_name(source_lang)
         target_name = self.translation_service._get_language_name(target_lang)
-        
-        def translate_single_page(page_num, page_blocks):
-            """Helper function to translate a single page's blocks"""
-            texts_to_translate = [b['text'] for b in page_blocks]
-            
-            prompt = f"""You are a professional translator. Translate the following list of text blocks from {source_name} to {target_name}. 
-These blocks are from the SAME PAGE of a document, so maintain consistent terminology and a natural narrative flow across them.
 
-IMPORTANT: Return the result EXCLUSIVELY as a JSON array of strings, where each string corresponds to the translation of the block at the same index. Do not include any other text or formatting.
+        def translate_batch(batch_key: str, batch_blocks: List[Dict]) -> tuple:
+            """Translate one batch of blocks with retry + exponential back-off."""
+            texts = [b['text'] for b in batch_blocks]
+            prompt = (
+                f"You are a professional translator. Translate the following list of text blocks "
+                f"from {source_name} to {target_name}. These blocks are from the same section of "
+                f"a document — maintain consistent terminology and natural flow.\n\n"
+                f"Return ONLY a JSON array of strings, one per input block, in the same order. "
+                f"No extra text or markdown.\n\n"
+                f"Example: [\"Translated 1\", \"Translated 2\"]\n\n"
+                f"Blocks:\n{json.dumps(texts, ensure_ascii=False)}"
+            )
 
-Example Format:
-["Translated Block 1", "Translated Block 2", ...]
+            last_error = None
+            for attempt in range(MAX_RETRIES):
+                try:
+                    # Use Flash for speed; Pro quality difference is negligible for batch translation
+                    model_name = self.translation_service.get_model(use_pro=False)
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt
+                    )
+                    result_text = response.text.strip()
+                    # Strip markdown code fences if present
+                    if "```json" in result_text:
+                        result_text = result_text.split("```json")[1].split("```")[0].strip()
+                    elif "```" in result_text:
+                        result_text = result_text.split("```")[1].split("```")[0].strip()
 
-Blocks to translate:
-{json.dumps(texts_to_translate, ensure_ascii=False)}
-"""
-            try:
-                model_name = self.translation_service.get_model(use_pro=True)
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt
-                )
-                
-                result_text = response.text.strip()
-                if "```json" in result_text:
-                    result_text = result_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in result_text:
-                    result_text = result_text.split("```")[1].split("```")[0].strip()
-                
-                translated_texts = json.loads(result_text)
-                
-                if isinstance(translated_texts, list) and len(translated_texts) == len(page_blocks):
-                    for idx, block in enumerate(page_blocks):
-                        block['translated_text'] = translated_texts[idx]
-                    return page_num, True, page_blocks
-                else:
-                    raise ValueError(f"Mismatch in translation length or format: {len(translated_texts) if isinstance(translated_texts, list) else 'not a list'}")
-            
-            except Exception as e:
-                # Fallback to block-by-block if JSON batch fails
-                print(f"  [PAGE_FAIL] Page {page_num} batch failed ({e}). Falling back to block-by-block...")
-                for block in page_blocks:
-                    res = self.translation_service.translate_text(block['text'], source_lang, target_lang)
-                    block['translated_text'] = res['translated_text'] if res['success'] else block['text']
-                return page_num, False, page_blocks
+                    translated_texts = json.loads(result_text)
+                    if isinstance(translated_texts, list) and len(translated_texts) == len(batch_blocks):
+                        for idx, block in enumerate(batch_blocks):
+                            block['translated_text'] = translated_texts[idx]
+                        return batch_key, True, batch_blocks
+                    else:
+                        raise ValueError(
+                            f"Length mismatch: got {len(translated_texts) if isinstance(translated_texts, list) else type(translated_texts)}, "
+                            f"expected {len(batch_blocks)}"
+                        )
+                except Exception as e:
+                    last_error = e
+                    wait = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"[batch {batch_key}] attempt {attempt+1}/{MAX_RETRIES} failed: {e}. Retrying in {wait}s...")
+                    time.sleep(wait)
 
-        # Execute page translations in parallel
-        # We limit max_workers to 5 to avoid aggressive rate-limiting on many-page documents
-        max_workers = min(5, len(pages))
-        translated_results_map = {}
-        
-        print(f"Starting parallel translation of {len(pages)} pages using {max_workers} threads...")
-        
+            # All retries exhausted — fall back to block-by-block
+            logger.warning(f"[batch {batch_key}] all retries failed ({last_error}). Falling back to block-by-block.")
+            for block in batch_blocks:
+                res = self.translation_service.translate_text(block['text'], source_lang, target_lang)
+                block['translated_text'] = res['translated_text'] if res.get('success') else block['text']
+            return batch_key, False, batch_blocks
+
+        # Run all batches in parallel
+        max_workers = min(MAX_WORKERS, len(batches))
+        results_map: dict = {}
+
+        logger.info(f"Translating {len(blocks)} blocks across {len(batches)} batches with {max_workers} threads...")
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_page = {executor.submit(translate_single_page, p_num, p_blocks): p_num for p_num, p_blocks in pages.items()}
-            
-            for future in as_completed(future_to_page):
-                p_num, success, result_blocks = future.result()
-                translated_results_map[p_num] = result_blocks
-                status = "[OK]" if success else "[FALLBACK]"
-                print(f"  {status} Finished Page {p_num}")
+            future_to_key = {
+                executor.submit(translate_batch, key, blks): key
+                for key, blks in batches
+            }
+            for future in as_completed(future_to_key):
+                batch_key, success, result_blocks = future.result()
+                results_map[batch_key] = result_blocks
+                status = "OK" if success else "FALLBACK"
+                logger.info(f"  [{status}] batch {batch_key} ({len(result_blocks)} blocks)")
 
-        # Flatten the results back into a single list sorted by page number
-        final_list = []
-        for p_num in sorted(translated_results_map.keys()):
-            final_list.extend(translated_results_map[p_num])
-            
+        # Reconstruct original order: iterate batches in insertion order
+        final_list: List[Dict] = []
+        for key, _ in batches:
+            final_list.extend(results_map[key])
+
         return final_list
 
 
