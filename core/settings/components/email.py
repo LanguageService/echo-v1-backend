@@ -7,5 +7,5 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'resend'
 EMAIL_HOST_PASSWORD = config('RESEND_API_KEY', '')
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', 'LetEcho <onboarding@resend.dev>')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', 'LetUsEcho<no-reply@letusecho.com>')
 SUPPORT_EMAIL = config('SUPPORT_EMAIL', 'support@letusecho.com')
