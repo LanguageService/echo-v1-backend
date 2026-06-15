@@ -275,6 +275,7 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.replit.dev',
     'https://echo-backend-uiei.onrender.com',
     "https://letusecho.vercel.app",  # Frontend Local
+    "https://letusechoo.vercel.app",
     "https://*.vercel.app",
 ]
 
@@ -303,6 +304,7 @@ CORS_ALLOWED_ORIGINS = [
    "http://localhost:3001",
    "http://127.0.0.1:3001",
    "https://letusecho.vercel.app",  # Frontend Local
+   "https://letusechoo.vercel.app",
 ]
 
 # Django Spectacular settings
