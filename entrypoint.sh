@@ -17,6 +17,17 @@ fi
 echo "Running migrations..."
 python manage.py migrate --noinput
 
+# Seed pricing data
+echo "Seeding pricing data..."
+python manage.py seed_pricing || echo "Seed pricing failed, continuing..."
+
+# Populate language and cloud configs
+echo "Populating languages..."
+python manage.py populate_languages || echo "Populate languages failed, continuing..."
+
+echo "Populating cloud configs..."
+python manage.py populate_cloud_configs || echo "Populate cloud configs failed, continuing..."
+
 # Collect static files
 echo "Collecting static files..."
 python manage.py collectstatic --noinput

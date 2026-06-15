@@ -28,6 +28,15 @@ python3 manage.py makemigrations --noinput
 echo "Running: migrate..."
 python3 manage.py migrate --noinput || echo "Migration failed, continuing build..."
 
+echo "Running: seed_pricing..."
+python3 manage.py seed_pricing || echo "Seed pricing failed, continuing build..."
+
+echo "Running: populate_languages..."
+python3 manage.py populate_languages || echo "Populate languages failed, continuing build..."
+
+echo "Running: populate_cloud_configs..."
+python3 manage.py populate_cloud_configs || echo "Populate cloud configs failed, continuing build..."
+
 echo "Running: collectstatic..."
 python3 manage.py collectstatic --noinput --clear
 
