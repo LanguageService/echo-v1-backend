@@ -3,13 +3,64 @@
 {% block title %}Document Processing Complete{% endblock %}
 
 {% block content %}
-<h2>Your document is ready!</h2>
-<p>Hi {{ full_name }},</p>
-<p>We've successfully finished processing <strong>{{ doc_name }}</strong>.</p>
-<ul>
-    <li>Pages processed: {{ page_count }}</li>
-    <li>Time taken: {{ processing_time }} seconds</li>
-</ul>
-<p>You can view the results on your dashboard.</p>
-<a href="{{ result_url }}" class="button">View Results</a>
+
+  <!-- ── Heading ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center" style="padding-bottom:28px;">
+        <div style="font-size:44px;margin-bottom:12px;">📄</div>
+        <h1 style="margin:0 0 8px;font-size:26px;font-weight:800;color:#f9fafb;">
+          Your document is ready!
+        </h1>
+        <p style="margin:0;font-size:15px;color:#9ca3af;line-height:1.6;">
+          Hi {{ full_name }}, we've finished processing your document.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Details block ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+    <tr>
+      <td style="background:#1f2937;border:1px solid #374151;border-radius:12px;padding:24px;">
+        <p style="margin:0 0 12px;font-size:14px;color:#f3f4f6;font-weight:600;">
+          📁 {{ doc_name }}
+        </p>
+        <p style="margin:0 0 8px;font-size:13px;color:#9ca3af;">
+          Pages processed: <span style="color:#f3f4f6;font-weight:600;">{{ page_count }}</span>
+        </p>
+        <p style="margin:0;font-size:13px;color:#9ca3af;">
+          Time taken: <span style="color:#f3f4f6;font-weight:600;">{{ processing_time }}s</span>
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── CTA ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center" style="padding-bottom:24px;">
+        <a href="{{ result_url }}"
+           style="display:inline-block;background:linear-gradient(135deg,#f97316,#ea580c);color:#ffffff;
+                  text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;
+                  border-radius:50px;letter-spacing:0.3px;">
+          View Results →
+        </a>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Support note ── -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center"
+          style="background:#1f2937;border:1px solid #374151;border-radius:10px;padding:16px 20px;">
+        <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.5;">
+          Need help? Reply to this email or visit our
+          <a href="#" style="color:#f97316;text-decoration:none;font-weight:600;">Help Centre</a>.
+        </p>
+      </td>
+    </tr>
+  </table>
+
 {% endblock %}

@@ -80,7 +80,16 @@ urlpatterns = [
     # Performance Optimization APIs
     path('api/v1/performance/', include('performance.urls')),
 
-    path('api/v1/payment/', include('payment.urls'))
+    path('api/v1/payment/', include('payment.urls')),
+    
+    # Wallet
+    path('api/v1/wallet/', include('wallet.urls')),
+    
+    # Billing
+    path('api/v1/billing/', include('billing.urls')),
+
+    # Developer API Keys
+    path('api/v1/api-keys/', include('api_keys.urls')),
 ]
 
 # Serve media files during development

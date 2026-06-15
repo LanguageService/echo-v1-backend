@@ -1,0 +1,57 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Top Up Wallet — {{ wallet.user }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:wallet_wallet_changelist' %}">Wallets</a>
+  &rsaquo; <a href="{% url 'admin:wallet_wallet_change' wallet.pk %}">{{ wallet.user }}</a>
+  &rsaquo; Top Up
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Top Up Wallet</h1>
+
+<div class="module">
+  <table>
+    <tbody>
+      <tr>
+        <th scope="row">User</th>
+        <td><strong>{{ wallet.user.get_full_name }} ({{ wallet.user.email }})</strong></td>
+      </tr>
+      <tr>
+        <th scope="row">Current Balance</th>
+        <td><strong>{{ wallet.balance }} credits</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="module aligned">
+    <h2>Top-up Details</h2>
+    {% if form.errors %}
+      <p class="errornote">Please correct the errors below.</p>
+    {% endif %}
+    <fieldset class="module aligned">
+      {% for field in form %}
+        <div class="form-row{% if field.errors %} errors{% endif %}">
+          {{ field.errors }}
+          <label{% if field.field.required %} class="required"{% endif %} for="{{ field.id_for_label }}">{{ field.label }}:</label>
+          {{ field }}
+          {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+        </div>
+      {% endfor %}
+    </fieldset>
+  </div>
+
+  <div class="submit-row">
+    <input type="submit" value="Confirm Top Up" class="default">
+    <a href="{% url 'admin:wallet_wallet_change' wallet.pk %}" style="margin-left: 12px;">Cancel</a>
+  </div>
+</form>
+{% endblock %}

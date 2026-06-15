@@ -8,4 +8,4 @@ from .structured import (
     SpeechTranslationViewSet, 
     ImageTranslationViewSet
 )
-from .general import GeneralTranslationHistoryAPIView
+from .general import GeneralTranslationHistoryAPIView, ToggleFavoriteAPIView

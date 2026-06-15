@@ -47,7 +47,7 @@ class JWTAuthMiddleware:
         cookie_name = dj_rest_auth_settings.JWT_AUTH_COOKIE
         
         headers = dict(scope['headers'])
-        if b'cookie' in headers:
+        if b'cookie' in headers and cookie_name:
             cookies = headers[b'cookie'].decode()
             for cookie_str in cookies.split(';'):
                 cookie_str = cookie_str.strip()

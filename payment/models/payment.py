@@ -62,9 +62,10 @@ class Payment(BaseModel):
         return rand.upper()
 
     def clean(self):
-        if self.payment_type == choices.PaymentType.WALLET_TOPUP and self.plan:
+        plan = getattr(self, "plan", None)
+        if self.payment_type == choices.PaymentType.WALLET_TOPUP and plan:
             raise ValidationError({"plan": "This field must be blank."})
-        if self.payment_type == choices.PaymentType.SUBSCRIPTION and not self.plan:
+        if self.payment_type == choices.PaymentType.SUBSCRIPTION and not plan:
             raise ValidationError({"plan": "This field is required."})
         return super().clean()
 

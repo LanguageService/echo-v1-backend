@@ -181,7 +181,7 @@ class TranslationOrchestrator:
 
     def translate_text(self, user, text: Optional[str], target_lang: str, source_lang: str = 'auto', 
                       is_sms: bool = False, mode: str = 'SHORT', session_id: Optional[str] = None,
-                      original_file_url: Optional[str] = None, title: Optional[str] = None) -> Dict[str, Any]:
+                      original_file_url: Optional[str] = None, title: Optional[str] = None, channel: str = 'UI') -> Dict[str, Any]:
         """Orchestrate text-to-text translation"""
         start_time = time.time()
         
@@ -223,6 +223,18 @@ class TranslationOrchestrator:
             if result['success']:
                 translation_record.translated_text = result['translated_text']
                 translation_record.status = TranslationStatus.COMPLETED
+                
+                # Calculate billing cost (Text = per million characters)
+                if text:
+                    from billing.services import BillingService
+                    from decimal import Decimal
+                    units = Decimal(str(len(text))) / Decimal('1000000.0')
+                    billing_res = BillingService.calculate_and_deduct_cost(user, channel, 'TTT', units)
+                    if billing_res['success']:
+                        translation_record.billing_cost_deducted = billing_res['cost_deducted']
+                        translation_record.billing_currency_used = billing_res['currency']
+                        translation_record.units_processed = units
+                        translation_record.channel = channel
             else:
                 translation_record.status = TranslationStatus.FAILED
                 translation_record.error_message = result.get('error', 'Translation failed')
@@ -248,7 +260,7 @@ class TranslationOrchestrator:
     def translate_speech(self, user, audio_file: Any, target_lang: str, source_lang: str = 'auto', 
                          mode: str = 'SHORT', session_id: Optional[str] = None, 
                          original_file_url: Optional[str] = None,
-                         translation_id: Optional[str] = None, title: Optional[str] = None) -> Dict[str, Any]:
+                         translation_id: Optional[str] = None, title: Optional[str] = None, channel: str = 'UI') -> Dict[str, Any]:
         """Orchestrate speech-to-speech translation"""
         start_time = time.time()
         
@@ -323,6 +335,19 @@ class TranslationOrchestrator:
             
             translation_record.status = TranslationStatus.COMPLETED
             translation_record.total_processing_time = time.time() - start_time
+            
+            # Calculate billing cost (Speech = per minute)
+            # TODO: Extract exact audio duration. Using 1.0 minute default for now.
+            from billing.services import BillingService
+            from decimal import Decimal
+            units = Decimal('1.0')
+            billing_res = BillingService.calculate_and_deduct_cost(user, channel, 'STS', units)
+            if billing_res['success']:
+                translation_record.billing_cost_deducted = billing_res['cost_deducted']
+                translation_record.billing_currency_used = billing_res['currency']
+                translation_record.units_processed = units
+                translation_record.channel = channel
+                
             translation_record.save()
             
             # Prefer the cloud URL when available, fall back to local FileField URLs
@@ -355,7 +380,7 @@ class TranslationOrchestrator:
                        target_language: Optional[str] = None,
                        mode: str = 'SHORT', session_id: Optional[str] = None,
                        original_file_url: Optional[str] = None,
-                       translation_id: Optional[str] = None, title: Optional[str] = None) -> Dict[str, Any]:
+                       translation_id: Optional[str] = None, title: Optional[str] = None, channel: str = 'UI') -> Dict[str, Any]:
         """Standalone Speech-to-Text (ASR) with optional translation"""
         # Maintain backward compatibility if language was passed positionally
         # (Though we prefer keyword arguments now)
@@ -422,6 +447,18 @@ class TranslationOrchestrator:
             translation_record.translated_text = final_text
             translation_record.status = TranslationStatus.COMPLETED
             translation_record.total_processing_time = time.time() - start_time
+            
+            # Calculate billing cost (Speech-to-Text = per minute)
+            from billing.services import BillingService
+            from decimal import Decimal
+            units = Decimal('1.0')
+            billing_res = BillingService.calculate_and_deduct_cost(user, channel, 'STT', units)
+            if billing_res['success']:
+                translation_record.billing_cost_deducted = billing_res['cost_deducted']
+                translation_record.billing_currency_used = billing_res['currency']
+                translation_record.units_processed = units
+                translation_record.channel = channel
+                
             translation_record.save()
             
             # Prefer the cloud URL when available, fall back to local FileField URL

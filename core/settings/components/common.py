@@ -71,7 +71,9 @@ INTERNAL_APPS = [
     'performance',
     'notification',
     'payment',
-    'wallet'
+    'wallet',
+    'billing',
+    'api_keys'
 ]
 
 
@@ -96,6 +98,7 @@ MIDDLEWARE = [
 
 
 REST_FRAMEWORK_DEFAULT_AUTH = (
+    "api_keys.authentication.DeveloperTokenAuthentication",
     "rest_framework_simplejwt.authentication.JWTAuthentication",
     "rest_framework.authentication.TokenAuthentication",
     "rest_framework.authentication.BasicAuthentication",
@@ -296,9 +299,10 @@ CORS_ALLOWED_ORIGINS = [
    "https://app.echo.com",  # Frontend Prod
    "http://app.echo.com",  # Frontend Prod
    "http://localhost:3000",  # Frontend Local
+   "http://127.0.0.1:3000",
+   "http://localhost:3001",
+   "http://127.0.0.1:3001",
    "https://letusecho.vercel.app",  # Frontend Local
-
-
 ]
 
 # Django Spectacular settings
@@ -410,7 +414,7 @@ CACHES = {
 
 
 VERIFICATION_OTP_TIMEOUT = int(config("VERIFICATION_OTP_TIMEOUT", "30"))
-STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
+PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY", default="")
 
 
 # Audio file settings
@@ -449,3 +453,15 @@ OTP_LENGTH = 6
 
 # Gemini API Settings
 GEMINI_API_KEY = config("GEMINI_API_KEY", default="")
+
+# Custom Models flag
+CUSTOM_MODEL = config("CUSTOM_MODEL", default=False, cast=bool)
+
+# Channels Configuration
+# ------------------------------------------------------------------------------
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}
+

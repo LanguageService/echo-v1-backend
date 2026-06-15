@@ -1,60 +1,79 @@
-.env.local
-.vscode/
-.DS_Store
-bin/*
-
-env.sh
-
-.env
+# ── Python ──────────────────────────────────────────────────────────────
 __pycache__/
-.pyc
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+.Python
+
+# ── Virtual environments ─────────────────────────────────────────────────
 env/
-db.sqlite3
-*/db.sqlite3
-
-staticfiles
-staticfiles/
-*/staticfiles/
-core/staticfiles/
-
-.idea
-.env
-*.pyc
-.venv
 venv/
-.pdf
+.venv/
+ENV/
+env.bak/
+venv.bak/
 
-core/settings/environments/local.py
-.archiver_shadow/
-.snapshots/
-
-
-
-ebook-test/*
-
+# ── Django ───────────────────────────────────────────────────────────────
+*.sqlite3
 db.sqlite3
+media/
+core/media/
+staticfiles/
+staticfiles_build/
+local_static/
 
-core/media/*
+# ── Environment & secrets ────────────────────────────────────────────────
+.env
+.env.*
+env.sh
+core/settings/environments/local.py
 
-core/__pycache__/*
-
-*/*/*/__pycache__/*
-
-*/*/__pycache__/*
-*/__pycache__/*
-
-users/serializers/__pycache__/*
-users/views/__pycache__/*
-users/models/__pycache__/*
-
-
-# Testing and Coverage
+# ── Testing & coverage ───────────────────────────────────────────────────
 .coverage
+.coverage.*
 htmlcov/
 .pytest_cache/
+pytest.ini
+nosetests.xml
+coverage.xml
+*.cover
 
-# Build
-staticfiles_build/
+# ── Celery ───────────────────────────────────────────────────────────────
+celerybeat-schedule
+celerybeat.pid
 
+# ── Logs ─────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Build & packaging ────────────────────────────────────────────────────
+build/
+dist/
+*.egg-info/
+.eggs/
+MANIFEST
+pip-wheel-metadata/
+
+# ── IDE ──────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.pydevproject
+
+# ── OS ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Misc ─────────────────────────────────────────────────────────────────
+*.pdf
+*.bak
+.archiver_shadow/
+.snapshots/
+ebook-test/
+bin/

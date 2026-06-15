@@ -36,6 +36,7 @@ class GeneralTranslationHistoryAPIView(APIView):
             # Validate query parameters
             limit = int(request.query_params.get('limit', 20))
             offset = int(request.query_params.get('offset', 0))
+            is_favorite = request.query_params.get('is_favorite')
             
             from itertools import chain
             
@@ -44,9 +45,12 @@ class GeneralTranslationHistoryAPIView(APIView):
             speech_qs = SpeechTranslation.objects.filter(user=request.user)
             image_qs = ImageTranslation.objects.filter(user=request.user)
             
+            if is_favorite and is_favorite.lower() == 'true':
+                text_qs = text_qs.filter(is_favorite=True)
+                speech_qs = speech_qs.filter(is_favorite=True)
+                image_qs = image_qs.filter(is_favorite=True)
+            
             # Combine and sort by date_created (reverse)
-            # Note: For large datasets, we might want a different approach (like a union or separate endpoints),
-            # but for history this combined list is what's expected.
             all_translations = sorted(
                 chain(text_qs, speech_qs, image_qs),
                 key=lambda x: x.date_created,
@@ -75,3 +79,34 @@ class GeneralTranslationHistoryAPIView(APIView):
             return Response({
                 'error': f'Failed to retrieve history: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ToggleFavoriteAPIView(APIView):
+    """Endpoint to toggle favorite status on any translation"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk, *args, **kwargs):
+        for model in [TextTranslation, SpeechTranslation, ImageTranslation]:
+            try:
+                translation = model.objects.get(pk=pk, user=request.user)
+                translation.is_favorite = not translation.is_favorite
+                translation.save()
+                return Response({'is_favorite': translation.is_favorite}, status=status.HTTP_200_OK)
+            except model.DoesNotExist:
+                continue
+        return Response({'error': 'Translation not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class DeleteTranslationAPIView(APIView):
+    """Delete a single translation record (any type) belonging to the authenticated user"""
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk, *args, **kwargs):
+        for model in [TextTranslation, SpeechTranslation, ImageTranslation]:
+            try:
+                translation = model.objects.get(pk=pk, user=request.user)
+                translation.delete()
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            except model.DoesNotExist:
+                continue
+        return Response({'error': 'Translation not found.'}, status=status.HTTP_404_NOT_FOUND)

@@ -69,18 +69,21 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    old_password = serializers.CharField()
+    old_password = serializers.CharField(required=False, allow_blank=True)
     new_password = serializers.CharField(validators=[validate_password])
 
     def validate(self, attrs):
         user = self.context.get("request").user
-        if not user.check_password(attrs["old_password"]):
-            raise serializers.ValidationError({"old_password": _("Wrong password")})
+        old_password = attrs.get("old_password", "")
+        
+        if user.has_usable_password():
+            if not old_password or not user.check_password(old_password):
+                raise serializers.ValidationError({"old_password": _("Wrong password")})
 
-        if attrs["old_password"] == attrs["new_password"]:
-            raise serializers.ValidationError(
-                {"new_password": _("Same as old password")}
-            )
+            if old_password == attrs["new_password"]:
+                raise serializers.ValidationError(
+                    {"new_password": _("Same as old password")}
+                )
 
         return super().validate(attrs)
 

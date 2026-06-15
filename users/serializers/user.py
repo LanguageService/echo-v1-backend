@@ -12,9 +12,14 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
+    has_password = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         exclude = ("password", "is_superuser", "user_permissions", "groups", "username")
+
+    def get_has_password(self, obj):
+        return obj.has_usable_password()
 
 
 class CustomerRegistrationSerializer(serializers.Serializer):

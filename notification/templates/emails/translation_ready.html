@@ -1,0 +1,21 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Translation Ready{% endblock %}
+
+{% block content %}
+<h2 style="margin-top:0;margin-bottom:16px;font-size:24px;font-weight:700;color:#f9fafb;">Your Translation is Ready!</h2>
+<p style="margin:0 0 16px;font-size:16px;color:#9ca3af;line-height:1.6;">
+  Hello {{ user.first_name|default:"there" }},
+</p>
+<p style="margin:0 0 16px;font-size:16px;color:#9ca3af;line-height:1.6;">
+  Your translation for "<strong style="color:#f3f4f6;">{{ document_title }}</strong>" has been successfully completed.
+</p>
+<div style="margin:32px 0;text-align:center;">
+  <a href="{{ download_link }}" style="display:inline-block;padding:14px 28px;background-color:#4F46E5;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;border-radius:8px;box-shadow:0 2px 4px rgba(79,70,229,0.25);">
+    View Translation
+  </a>
+</div>
+<p style="margin:0;font-size:16px;color:#9ca3af;line-height:1.6;">
+  Thank you for using Echo!
+</p>
+{% endblock %}

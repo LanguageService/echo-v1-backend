@@ -18,7 +18,7 @@ class User(AbstractUser, BaseModel):
     ADMIN = "admin"
     CUSTOMER = "customer"
     SUPER_ADMIN = "super_admin"
-
+    OPERATOR = "operator"
 
     MALE = "male"
     FEMALE = "female"
@@ -32,6 +32,7 @@ class User(AbstractUser, BaseModel):
         (ADMIN, ADMIN),
         (CUSTOMER, CUSTOMER),
         (SUPER_ADMIN, SUPER_ADMIN),
+        (OPERATOR, OPERATOR),
     )
 
     VISIT_TYPE = (

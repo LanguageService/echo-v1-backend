@@ -10,6 +10,7 @@ from rest_framework import status
 from core.utils import error_401, error_400, error_404
 from core.viewset import BaseViewSet
 from users.utils import user_deletion
+from users.permissions import IsSuperAdmin
 from .. import serializers
 
 
@@ -154,3 +155,62 @@ class UserViewSet(BaseViewSet):
 
         serializer = self.get_serializer(user)
         return Response(serializer.data)
+
+    @action(
+        detail=False,
+        methods=["POST"],
+        permission_classes=[IsSuperAdmin],
+        url_path="invite",
+    )
+    def invite(self, request, *args, **kwargs):
+        """
+        Invite an Operator or Super Admin.
+        Only a super admin can perform this action.
+        """
+        email = request.data.get("email")
+        role = request.data.get("role")
+        first_name = request.data.get("first_name", "")
+        last_name = request.data.get("last_name", "")
+
+        if not email or not role:
+            return error_400("Email and role are required")
+
+        role = role.lower()
+        if role not in [User.SUPER_ADMIN, User.OPERATOR]:
+            return error_400("Role must be 'super_admin' or 'operator'")
+
+        if User.objects.filter(email=email).exists():
+            return error_400("User with this email already exists")
+
+        # Create user
+        user = User.objects.create(
+            email=email,
+            username=email,
+            user_type=role,
+            first_name=first_name,
+            last_name=last_name,
+            is_active=True,
+            is_verified=True
+        )
+        
+        # We set an unusable password. The user should use "Forgot Password" or a specific invite flow to set it.
+        user.set_unusable_password()
+        user.save()
+
+        # Send invite email
+        try:
+            from django.core.mail import send_mail
+            from django.conf import settings
+            reset_url = f"{settings.FRONTEND_URL}/reset-password?email={email}"
+            subject = "You have been invited to Echo Admin"
+            message = f"You have been invited as a {role}.\nPlease set your password by going here: {reset_url}"
+            send_mail(
+                subject, message, settings.DEFAULT_FROM_EMAIL, [email], fail_silently=True
+            )
+        except Exception:
+            pass
+
+        return Response({
+            "message": f"{role.replace('_', ' ').title()} invited successfully", 
+            "email": email
+        }, status=status.HTTP_201_CREATED)

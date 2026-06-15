@@ -19,6 +19,7 @@ class PaymentType(models.TextChoices):
 
     NEW_SERVICE = "NEW_SERVICE", _("NEW_SERVICE")
     SUBSCRIPTION = "SUBSCRIPTION", _("SUBSCRIPTION")
+    WALLET_TOPUP = "WALLET_TOPUP", _("WALLET_TOPUP")
 
 
 

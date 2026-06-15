@@ -27,12 +27,20 @@ class GeminiASRProvider(BaseASRProvider):
             if hasattr(audio_file, 'read'):
                 audio_file.seek(0)
                 audio_data = audio_file.read()
-            # Handle string (public URLs)
+            # Handle string (public URLs or cloud paths)
             elif isinstance(audio_file, str) and (audio_file.startswith('http://') or audio_file.startswith('https://')):
-                import requests
-                response = requests.get(audio_file, timeout=60)
-                response.raise_for_status()
-                audio_data = response.content
+                import tempfile
+                import os
+                from translation.cloud_storage import cloud_storage
+                
+                with tempfile.NamedTemporaryFile(delete=False) as temp_audio:
+                    temp_path = temp_audio.name
+                
+                download_success = cloud_storage.download_file(audio_file, temp_path)
+                if download_success:
+                    with open(temp_path, 'rb') as f:
+                        audio_data = f.read()
+                os.remove(temp_path)
             # Handle raw bytes
             elif isinstance(audio_file, bytes):
                 audio_data = audio_file

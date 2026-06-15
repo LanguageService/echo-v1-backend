@@ -1,6 +1,7 @@
 import os
-import fitz  # PyMuPDF
+import csv
 import html
+import fitz  # PyMuPDF
 from docx import Document
 from typing import List, Dict, Any, Tuple
 
@@ -173,3 +174,142 @@ class PdfProcessor:
 
         doc.save(output_path)
         doc.close()
+
+
+class CsvProcessor:
+    """Processor for CSV files"""
+
+    BATCH_SIZE = 20  # cells per virtual page
+
+    @staticmethod
+    def _is_translatable(value: str) -> bool:
+        """Return True if the cell value looks like natural-language text."""
+        if not value or not value.strip():
+            return False
+        stripped = value.strip()
+        # Skip pure numbers, percentages, and short codes
+        try:
+            float(stripped.replace(',', '').replace('%', ''))
+            return False
+        except ValueError:
+            pass
+        # Keep anything with at least one alphabetic character
+        return any(c.isalpha() for c in stripped)
+
+    @staticmethod
+    def extract_text(file_path: str) -> List[Dict[str, Any]]:
+        encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
+        rows = None
+        for enc in encodings:
+            try:
+                with open(file_path, newline='', encoding=enc) as f:
+                    rows = list(csv.reader(f))
+                break
+            except (UnicodeDecodeError, Exception):
+                continue
+        if rows is None:
+            raise ValueError("Could not decode CSV file with supported encodings")
+
+        blocks = []
+        for r_idx, row in enumerate(rows):
+            for c_idx, cell in enumerate(row):
+                if CsvProcessor._is_translatable(cell):
+                    blocks.append({
+                        'text': cell,
+                        'row': r_idx,
+                        'col': c_idx,
+                        'type': 'csv_cell',
+                    })
+
+        for i, block in enumerate(blocks):
+            block['page'] = i // CsvProcessor.BATCH_SIZE
+
+        return blocks
+
+    @staticmethod
+    def replace_text(file_path: str, translated_blocks: List[Dict[str, Any]], output_path: str):
+        encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
+        rows = None
+        for enc in encodings:
+            try:
+                with open(file_path, newline='', encoding=enc) as f:
+                    rows = list(csv.reader(f))
+                break
+            except (UnicodeDecodeError, Exception):
+                continue
+        if rows is None:
+            raise ValueError("Could not decode CSV file with supported encodings")
+
+        for block in translated_blocks:
+            r, c = block['row'], block['col']
+            if r < len(rows) and c < len(rows[r]):
+                rows[r][c] = block.get('translated_text', rows[r][c])
+
+        with open(output_path, 'w', newline='', encoding='utf-8-sig') as f:
+            csv.writer(f).writerows(rows)
+
+
+class ExcelProcessor:
+    """Processor for Excel files (.xlsx / .xls via openpyxl)"""
+
+    BATCH_SIZE = 20  # cells per virtual page
+
+    @staticmethod
+    def _is_translatable(value) -> bool:
+        if value is None:
+            return False
+        if not isinstance(value, str):
+            return False
+        stripped = value.strip()
+        if not stripped:
+            return False
+        return any(c.isalpha() for c in stripped)
+
+    @staticmethod
+    def extract_text(file_path: str) -> List[Dict[str, Any]]:
+        try:
+            import openpyxl
+        except ImportError:
+            raise ImportError("openpyxl is required for Excel support: pip install openpyxl")
+
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        blocks = []
+
+        for s_idx, sheet in enumerate(wb.worksheets):
+            for r_idx, row in enumerate(sheet.iter_rows()):
+                for c_idx, cell in enumerate(row):
+                    if ExcelProcessor._is_translatable(cell.value):
+                        blocks.append({
+                            'text': str(cell.value),
+                            'sheet': s_idx,
+                            'row': r_idx,
+                            'col': c_idx,
+                            'type': 'excel_cell',
+                        })
+
+        for i, block in enumerate(blocks):
+            block['page'] = i // ExcelProcessor.BATCH_SIZE
+
+        wb.close()
+        return blocks
+
+    @staticmethod
+    def replace_text(file_path: str, translated_blocks: List[Dict[str, Any]], output_path: str):
+        try:
+            import openpyxl
+        except ImportError:
+            raise ImportError("openpyxl is required for Excel support: pip install openpyxl")
+
+        wb = openpyxl.load_workbook(file_path)
+        sheets = wb.worksheets
+
+        for block in translated_blocks:
+            s, r, c = block['sheet'], block['row'], block['col']
+            if s < len(sheets):
+                sheet = sheets[s]
+                # openpyxl uses 1-based indexing
+                cell = sheet.cell(row=r + 1, column=c + 1)
+                cell.value = block.get('translated_text', cell.value)
+
+        wb.save(output_path)
+        wb.close()

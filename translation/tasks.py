@@ -40,6 +40,15 @@ def async_voice_translation_task(self, translation_id: str) -> Dict[str, Any]:
             translation_id=translation_id
         )
         
+        if result.get('success') and translation_record.user and translation_record.user.email:
+            from users.services import EmailService
+            download_url = result.get('translated_audio_url') or "Login to your dashboard to view"
+            EmailService.send_translation_ready_email(
+                user=translation_record.user,
+                document_title=translation_record.title or f"Audio Translation ({translation_record.target_language})",
+                download_link=download_url
+            )
+            
         return result
         
     except Exception as e:
@@ -74,22 +83,12 @@ def async_ebook_translation_task(self, translation_id: str, local_file_path: str
             # Send completion email
             translation_record = TextTranslation.objects.get(id=translation_id)
             if translation_record.user and translation_record.user.email:
-                subject = "Your Document Translation is Ready!"
-                body = f"""
-                Hello {translation_record.user.first_name or 'there'},
-                
-                Your document has been successfully translated to {translation_record.target_language}.
-                
-                You can download it now from your dashboard:
-                {translation_record.translated_file_url}
-                
-                Thank you for using Echo!
-                """
-                send_email(
-                    recipient=translation_record.user.email,
-                    subject=subject,
-                    body_text=body,
-                    enqueue=True
+                from users.services import EmailService
+                download_url = translation_record.translated_file_url or "Login to your dashboard to view"
+                EmailService.send_translation_ready_email(
+                    user=translation_record.user,
+                    document_title=translation_record.title or f"Document Translation ({translation_record.target_language})",
+                    download_link=download_url
                 )
         
         return result

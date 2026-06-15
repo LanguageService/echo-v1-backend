@@ -6,7 +6,7 @@ from . import models
 class WalletSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Wallet
-        exclude = ("authorization_code",)
+        fields = "__all__"
 
 
 class TransactionSerializer(serializers.ModelSerializer):

@@ -35,6 +35,8 @@ class EmailDispatcher:
     ) -> bool:
         """Render a template and send via standard Django mail backend."""
         try:
+            if "frontend_url" not in context:
+                context["frontend_url"] = getattr(settings, "FRONTEND_BASE_URL", "https://letusecho.vercel.app")
             html = render_to_string(template, context)
             plain_text = "Please view this email in an HTML-capable mail client."
             
@@ -63,7 +65,7 @@ class EmailDispatcher:
         """
         return cls._dispatch(
             to=user.email,
-            subject="Welcome to ECHO 🎉",
+            subject="Welcome to LET US ECHO 🎉",
             template="emails/onboarding.html",
             context={
                 "user": user,
@@ -79,7 +81,7 @@ class EmailDispatcher:
         """
         return cls._dispatch(
             to=user.email,
-            subject="Verify your ECHO email address",
+            subject="Verify your LET US ECHO email address",
             template="emails/email_verification.html",
             context={
                 "user": user,
@@ -96,7 +98,7 @@ class EmailDispatcher:
         """
         return cls._dispatch(
             to=user.email,
-            subject="Reset your ECHO password",
+            subject="Reset your LET US ECHO password",
             template="emails/reset_password.html",
             context={
                 "user": user,

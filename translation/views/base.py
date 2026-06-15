@@ -90,16 +90,17 @@ class UserSettingsAPIView(APIView):
     def post(self, request, *args, **kwargs):
         """Update user settings"""
         try:
-            serializer = UserSettingsSerializer(data=request.data)
+            instance, _ = UserSettings.objects.get_or_create(user=request.user)
+            serializer = UserSettingsSerializer(instance, data=request.data)
             if not serializer.is_valid():
                 return Response({
                     'error': 'Invalid settings data',
                     'details': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-            settings = serializer.save(user=request.user)
+
+            serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
-            
+
         except Exception as e:
             logger.error(f"Error updating settings: {str(e)}")
             return Response({
@@ -111,7 +112,7 @@ class UserSettingsAPIView(APIView):
 class LanguageSupportAPIView(generics.ListAPIView):
     """Endpoint for supported languages information"""
     
-    queryset = LanguageSupport.objects.all()
+    queryset = LanguageSupport.objects.filter(is_active=True)
     serializer_class = LanguageSupportSerializer
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]

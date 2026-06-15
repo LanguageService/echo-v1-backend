@@ -12,6 +12,7 @@ from rest_framework import status
 from drf_spectacular.utils import extend_schema
 
 from users.services import UserStatsService
+from users.permissions import IsSuperAdmin, IsOperatorOrSuperAdmin
 
 
 @extend_schema(tags=["Statistics"])
@@ -77,11 +78,11 @@ class StatsViewSet(ViewSet):
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=False, methods=['get'], permission_classes=[IsAdminUser], url_path='admin')
+    @action(detail=False, methods=['get'], permission_classes=[IsOperatorOrSuperAdmin], url_path='admin')
     def admin_stats(self, request):
         """
         Get system-wide statistics for administrators.
-        Requires admin permissions.
+        Requires operator or super_admin permissions.
         """
         try:
             stats = UserStatsService.get_user_statistics()
@@ -93,5 +94,31 @@ class StatsViewSet(ViewSet):
             return Response({
                 'status': 'error',
                 'message': 'Failed to retrieve admin statistics',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsSuperAdmin], url_path='revenue')
+    def revenue_stats(self, request):
+        """
+        Get system-wide revenue statistics.
+        Requires super_admin permissions.
+        """
+        try:
+            # Here we would calculate real revenue from the payment models.
+            # Placeholder for revenue calculation logic.
+            revenue_data = {
+                'total_revenue': 0.0,
+                'monthly_revenue': 0.0,
+                'weekly_revenue': 0.0,
+                'currency': 'USD'
+            }
+            return Response({
+                'status': 'success',
+                'revenue_stats': revenue_data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': 'Failed to retrieve revenue statistics',
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -27,7 +27,7 @@ from .models import TextTranslation, SpeechTranslation, ImageTranslation, UserSe
 import uuid
 from .choices import FeatureType, TranslationStatus, TranslationMode
 from .cloud_storage import cloud_storage
-from .document_processors import DocxProcessor, PdfProcessor
+from .document_processors import DocxProcessor, PdfProcessor, CsvProcessor, ExcelProcessor
 from decouple import config
 import requests
 import tempfile
@@ -742,18 +742,12 @@ class VoiceTranslationService:
                 confidence_score=stt_result['confidence'],
                 total_processing_time=total_processing_time,
                 session_id=session_id,
-                feature_type=FeatureType.SPEECH_TRANSLATION
-            )
-
-            # Save processing times
-            from .models import TextTranslation, SpeechTranslationProcessingTime
-            
-            TranslationProcessingTime.objects.create(
-                translation=translation_record,
-                speech_to_text=stt_result.get('processing_time', 0.0),
-                text_to_text=translation_result.get('processing_time', 0.0),
-                text_to_speech=tts_result.get('processing_time', 0.0) if tts_result else 0.0,
-                total=total_processing_time
+                feature_type=FeatureType.SPEECH_TRANSLATION,
+                processing_steps={
+                    'speech_to_text': stt_result.get('processing_time', 0.0),
+                    'text_to_text': translation_result.get('processing_time', 0.0),
+                    'text_to_speech': tts_result.get('processing_time', 0.0) if tts_result else 0.0,
+                }
             )
             
             # Prepare response
@@ -791,13 +785,18 @@ class VoiceTranslationService:
             }
 
 
+SUPPORTED_DOC_FORMATS = {'pdf', 'docx', 'doc', 'csv', 'xlsx', 'xls'}
+
+
 class DocumentTranslationService(GeminiService):
-    """Service for handling document (PDF, DOCX) translation operations"""
-    
+    """Service for handling document (PDF, DOCX, CSV, Excel) translation operations"""
+
     def __init__(self):
         super().__init__()
         self.docx_processor = DocxProcessor()
         self.pdf_processor = PdfProcessor()
+        self.csv_processor = CsvProcessor()
+        self.excel_processor = ExcelProcessor()
         self.translation_service = TranslationService()
 
     def extract_document_text(self, uploaded_file) -> Dict[str, Any]:
@@ -817,8 +816,8 @@ class DocumentTranslationService(GeminiService):
             file_name = getattr(uploaded_file, 'name', 'document')
             
         file_ext = file_name.split('.')[-1].lower() if '.' in file_name else 'document'
-        
-        if file_ext not in ['pdf', 'docx', 'doc']:
+
+        if file_ext not in SUPPORTED_DOC_FORMATS:
             return {
                 'success': False,
                 'error': f"Unsupported file format: {file_ext}",
@@ -827,18 +826,15 @@ class DocumentTranslationService(GeminiService):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = os.path.join(temp_dir, f"input_{file_name}")
-            
+
             # Save uploaded file to temp path
             if isinstance(uploaded_file, str):
-                # If it's a path, copy the file
                 shutil.copy2(uploaded_file, input_path)
             elif hasattr(uploaded_file, 'chunks'):
-                # Django file with chunks
                 with open(input_path, 'wb+') as destination:
                     for chunk in uploaded_file.chunks():
                         destination.write(chunk)
             else:
-                # File-like object
                 with open(input_path, 'wb+') as destination:
                     shutil.copyfileobj(uploaded_file, destination)
 
@@ -846,6 +842,10 @@ class DocumentTranslationService(GeminiService):
                 # Extract text
                 if file_ext == 'pdf':
                     blocks = self.pdf_processor.extract_text(input_path)
+                elif file_ext in ('csv',):
+                    blocks = self.csv_processor.extract_text(input_path)
+                elif file_ext in ('xlsx', 'xls'):
+                    blocks = self.excel_processor.extract_text(input_path)
                 else:
                     blocks = self.docx_processor.extract_text(input_path)
 
@@ -944,6 +944,10 @@ class DocumentTranslationService(GeminiService):
                 # Generate the reconstructed document
                 if file_ext == 'pdf':
                     self.pdf_processor.replace_text(input_path, translated_blocks, output_path)
+                elif file_ext == 'csv':
+                    self.csv_processor.replace_text(input_path, translated_blocks, output_path)
+                elif file_ext in ('xlsx', 'xls'):
+                    self.excel_processor.replace_text(input_path, translated_blocks, output_path)
                 else:
                     self.docx_processor.replace_text(input_path, translated_blocks, output_path)
 
@@ -981,7 +985,7 @@ class DocumentTranslationService(GeminiService):
         file_name = uploaded_file.name
         file_ext = file_name.split('.')[-1].lower()
         
-        if file_ext not in ['pdf', 'docx', 'doc']:
+        if file_ext not in SUPPORTED_DOC_FORMATS:
             return {
                 'success': False,
                 'error': f"Unsupported file format: {file_ext}",
@@ -1087,10 +1091,14 @@ class DocumentTranslationService(GeminiService):
                     with open(local_file_path, 'rb') as f:
                         from django.core.files.base import ContentFile
                         content_file = ContentFile(f.read(), name=file_name)
-                        content_file.content_type = (
-                            'application/pdf' if file_ext == 'pdf'
-                            else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                        )
+                        content_file.content_type = {
+                            'pdf': 'application/pdf',
+                            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            'doc': 'application/msword',
+                            'csv': 'text/csv',
+                            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            'xls': 'application/vnd.ms-excel',
+                        }.get(file_ext, 'application/octet-stream')
                         original_url = cloud_storage.upload_document_input_file(
                             file=content_file,
                             language=translation_record.original_language or 'en',
@@ -1114,19 +1122,14 @@ class DocumentTranslationService(GeminiService):
                 if not translation_record.original_file_url:
                     raise Exception("Original file not found locally or in cloud")
                 
-                import requests
                 import tempfile
-                logger.info(f"Downloading original file from {translation_record.original_file_url}")
+                logger.info(f"Downloading original file securely via cloud storage: {translation_record.original_file_url}")
                 temp_dir = tempfile.mkdtemp()
                 local_file_path = os.path.join(temp_dir, file_name)
                 
-                response = requests.get(translation_record.original_file_url, stream=True)
-                if response.status_code != 200:
-                    raise Exception(f"Failed to download original file: {response.status_code}")
-                    
-                with open(local_file_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                download_success = cloud_storage.download_file(translation_record.original_file_url, local_file_path)
+                if not download_success:
+                    raise Exception("Failed to download original file from cloud storage")
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 output_filename = f"output_{file_name}"
@@ -1135,6 +1138,10 @@ class DocumentTranslationService(GeminiService):
                 # 5. Extract text
                 if file_ext == 'pdf':
                     blocks = self.pdf_processor.extract_text(local_file_path)
+                elif file_ext == 'csv':
+                    blocks = self.csv_processor.extract_text(local_file_path)
+                elif file_ext in ('xlsx', 'xls'):
+                    blocks = self.excel_processor.extract_text(local_file_path)
                 else:
                     blocks = self.docx_processor.extract_text(local_file_path)
 
@@ -1155,6 +1162,10 @@ class DocumentTranslationService(GeminiService):
                 # 8. Reconstruct document
                 if file_ext == 'pdf':
                     self.pdf_processor.replace_text(local_file_path, translated_blocks, output_path)
+                elif file_ext == 'csv':
+                    self.csv_processor.replace_text(local_file_path, translated_blocks, output_path)
+                elif file_ext in ('xlsx', 'xls'):
+                    self.excel_processor.replace_text(local_file_path, translated_blocks, output_path)
                 else:
                     self.docx_processor.replace_text(local_file_path, translated_blocks, output_path)
 
@@ -1240,8 +1251,8 @@ class DocumentTranslationService(GeminiService):
         - Translates all batches concurrently (up to max_workers threads).
         - Retries with exponential back-off before falling back to block-by-block.
         """
-        MAX_BLOCKS_PER_BATCH = 25
-        MAX_WORKERS = 10
+        MAX_BLOCKS_PER_BATCH = 40
+        MAX_WORKERS = 15
         MAX_RETRIES = 3
 
         # Group blocks by page
@@ -1843,16 +1854,12 @@ class AsyncVoiceTranslationService:
                         audio_format=audio_format,
                         confidence_score=stt_result['confidence'],
                         total_processing_time=total_processing_time,
-                        session_id=session_id
-                    )
-                    # Save processing times
-                    from .models import TextTranslation, SpeechTranslationProcessingTime
-                    await sync_to_async(TranslationProcessingTime.objects.create)(
-                        translation=translation_record,
-                        speech_to_text=stt_result.get('processing_time', 0.0),
-                        text_to_text=translation_result.get('processing_time', 0.0),
-                        text_to_speech=tts_result.get('processing_time', 0.0) if tts_result else 0.0,
-                        total=total_processing_time
+                        session_id=session_id,
+                        processing_steps={
+                            'speech_to_text': stt_result.get('processing_time', 0.0),
+                            'text_to_text': translation_result.get('processing_time', 0.0),
+                            'text_to_speech': tts_result.get('processing_time', 0.0) if tts_result else 0.0,
+                        }
                     )
                 return translation_record
             

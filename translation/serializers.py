@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
-    TextTranslation, SpeechTranslation, ImageTranslation, 
-    UserSettings, AudioFile, LanguageSupport
+    TextTranslation, SpeechTranslation, ImageTranslation,
+    UserSettings, LanguageSupport
 )
 
 from .choices import SpeechServiceType
@@ -18,16 +18,16 @@ class UserSettingsSerializer(serializers.ModelSerializer):
         fields = [
             'model', 'voice', 'autoplay', 'auto_detect_language',
             'super_fast_mode', 'source_language', 'target_language',
-            'theme', 'audio_quality'
+            'theme', 'audio_quality', 'date_created', 'last_modified',
         ]
-        read_only_fields = ['user']
+        read_only_fields = ['user', 'date_created', 'last_modified']
 
 
 class TextTranslationSerializer(serializers.ModelSerializer):
     class Meta:
         model = TextTranslation
         fields = [
-            'id', 'title', 'mode', 'is_sms', 'original_language', 'target_language',
+            'id', 'title', 'mode', 'is_sms', 'is_favorite', 'original_language', 'target_language',
             'status', 'original_text', 'translated_text', 'original_file_url', 
             'translated_file_url', 'total_processing_time', 'date_created'
         ]
@@ -46,7 +46,7 @@ class SpeechTranslationSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpeechTranslation
         fields = [
-            'id', 'title', 'mode', 'speech_service', 'audio_format', 'duration',
+            'id', 'title', 'mode', 'speech_service', 'is_favorite', 'audio_format', 'duration',
             'original_audio_url', 'translated_audio_url', 'original_text', 
             'translated_text', 'status', 'original_language', 'target_language',
             'confidence_score', 'total_processing_time', 'date_created'
@@ -76,7 +76,7 @@ class ImageTranslationSerializer(serializers.ModelSerializer):
     class Meta:
         model = ImageTranslation
         fields = [
-            'id', 'title', 'mode', 'original_image', 'original_image_url', 'ocr_text', 'translated_text',
+            'id', 'title', 'mode', 'original_image', 'is_favorite', 'original_image_url', 'ocr_text', 'translated_text',
             'status', 'original_language', 'target_language', 'total_processing_time', 
             'date_created'
         ]

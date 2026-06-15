@@ -115,8 +115,8 @@ class CloudStorageService:
     
     def is_available(self) -> bool:
         """Check if cloud storage is properly configured and available"""
-        # 1. Disable cloud storage in local environment
-        if config("ENV_MODE", default="prod") == "local":
+        # 1. Disable cloud storage unless in production environment
+        if config("ENV_MODE", default="prod") != "prod":
             return False
             
         if self.config is None:
@@ -196,7 +196,7 @@ class CloudStorageService:
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'audio'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
 
-        if config("ENV_MODE", default="prod") == "local":
+        if config("ENV_MODE", default="prod") != "prod":
             content = file.read() if hasattr(file, 'read') else b''
             return self._local_store(filename, content, 'speech/input')
 
@@ -216,7 +216,7 @@ class CloudStorageService:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
 
-        if config("ENV_MODE", default="prod") == "local":
+        if config("ENV_MODE", default="prod") != "prod":
             return self._local_store(filename, file_content, 'speech/output')
 
         if not self.is_available():
@@ -236,7 +236,7 @@ class CloudStorageService:
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'jpg'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
 
-        if config("ENV_MODE", default="prod") == "local":
+        if config("ENV_MODE", default="prod") != "prod":
             content = file.read() if hasattr(file, 'read') else b''
             return self._local_store(filename, content, 'image/input')
 
@@ -257,7 +257,7 @@ class CloudStorageService:
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'doc'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
 
-        if config("ENV_MODE", default="prod") == "local":
+        if config("ENV_MODE", default="prod") != "prod":
             content = file.read() if hasattr(file, 'read') else b''
             return self._local_store(filename, content, 'text/input')
 
@@ -277,7 +277,7 @@ class CloudStorageService:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
 
-        if config("ENV_MODE", default="prod") == "local":
+        if config("ENV_MODE", default="prod") != "prod":
             with open(file_path, 'rb') as f:
                 content = f.read()
             return self._local_store(filename, content, 'text/output')
@@ -292,7 +292,14 @@ class CloudStorageService:
         with open(file_path, 'rb') as f:
             from django.core.files.base import ContentFile
             content_file = ContentFile(f.read(), name=filename)
-            content_type = 'application/pdf' if file_format.lower() == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            content_type = {
+                'pdf': 'application/pdf',
+                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'doc': 'application/msword',
+                'csv': 'text/csv',
+                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'xls': 'application/vnd.ms-excel',
+            }.get(file_format.lower(), 'application/octet-stream')
             content_file.content_type = content_type
             return self._upload_file(content_file, folder_path)
     
@@ -379,6 +386,61 @@ class CloudStorageService:
         except Exception as e:
             logger.error(f"Failed to upload bytes to {self.config.provider}: {e}")
             return None
+            
+    def download_file(self, file_url: str, local_path: str) -> bool:
+        """Download a file from cloud storage using its URL securely via the provider client"""
+        if not self.is_available() or not file_url:
+            # Fallback to standard HTTP requests if cloud storage is off
+            import requests
+            try:
+                response = requests.get(file_url, stream=True)
+                if response.status_code == 200:
+                    with open(local_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    return True
+            except Exception as e:
+                logger.error(f"HTTP download fallback failed: {e}")
+            return False
+            
+        try:
+            bucket_name = self.get_bucket_name()
+            if self.config.provider == 's3':
+                path_start = file_url.find(f"/{bucket_name}/")
+                if path_start == -1:
+                    path_start = file_url.find(".amazonaws.com/")
+                    if path_start == -1:
+                        return False
+                    file_path = file_url[path_start + len(".amazonaws.com/"):]
+                else:
+                    file_path = file_url[path_start + len(f"/{bucket_name}/"):]
+                
+                self.client.download_file(bucket_name, file_path, local_path)
+                return True
+                
+            elif self.config.provider == 'gcs':
+                path_start = file_url.find(f"/{bucket_name}/")
+                if path_start == -1:
+                    return False
+                file_path = file_url[path_start + len(f"/{bucket_name}/"):]
+                bucket = self.client.bucket(bucket_name)
+                blob = bucket.blob(file_path)
+                blob.download_to_filename(local_path)
+                return True
+            
+            elif self.config.provider == 'cloudinary':
+                import requests
+                response = requests.get(file_url, stream=True)
+                if response.status_code == 200:
+                    with open(local_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    return True
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to download file from {self.config.provider}: {e}")
+            return False
     
     def delete_file(self, file_url: str) -> bool:
         """Delete a file from cloud storage using its URL"""
@@ -484,6 +546,43 @@ class CloudStorageService:
             "bucket_source": bucket_source,
             "expected_bucket_env_var": f"{self.config.provider.upper()}_BUCKET_NAME"
         }
+    
+    def generate_presigned_url(self, file_name: str, file_type: str, user_id: str, content_type: str = None) -> Optional[dict]:
+        """Generate a presigned URL for direct S3 upload from the frontend"""
+        if not self.is_available() or self.config.provider != 's3':
+            logger.warning("Cloud storage not available or not using S3")
+            return None
+            
+        user_hex = self._get_user_hex(user_id)
+        # The user requested folder structure: user or business/file_type/file
+        # We will use: user_hex/file_type/filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}_{file_name}"
+        folder_path = f"{user_hex}/{file_type}/{unique_filename}"
+        bucket_name = self.get_bucket_name()
+        
+        try:
+            params = {
+                'Bucket': bucket_name,
+                'Key': folder_path
+            }
+            if content_type:
+                params['ContentType'] = content_type
+                
+            url = self.client.generate_presigned_url(
+                'put_object',
+                Params=params,
+                ExpiresIn=3600
+            )
+            return {
+                "upload_url": url,
+                "s3_key": folder_path,
+                "bucket": bucket_name,
+                "file_url": f"https://{bucket_name}.s3.{self.config.region}.amazonaws.com/{folder_path}"
+            }
+        except Exception as e:
+            logger.error(f"Failed to generate presigned URL: {e}")
+            return None
 
 
 # Global instance

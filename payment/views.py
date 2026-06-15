@@ -10,9 +10,9 @@ from core.utils import error_400, error_404, serializer_errors
 from users.models.users import User
 from wallet.models import Wallet
 from .models.payment import Payment
-from .models.webhook import KPayWebhookEvent
-from .serializers import KPayWebhookSerializer
-from .utils import StripeIntegration
+from .models.webhook import PaymentWebhookEvent
+from .serializers import PaymentWebhookSerializer
+from .services.paystack import paystack_service
 from . import choices, serializers
 
 
@@ -44,14 +44,21 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericVi
             amount = serializer.validated_data["amount"]
             tx_ref = Payment.generate_reference(choices.PaymentType.WALLET_TOPUP)
 
-            res = PaystackIntegration().initialize_transaction(
-                request.user,
-                amount,
-                serializer.validated_data["callback_url"],
-                tx_ref,
+            res = paystack_service.initialize_transaction(
+                email=request.user.email,
+                amount=int(amount * 100),
+                reference=tx_ref,
+                callback_url=serializer.validated_data.get("callback_url"),
             )
-            if not res:
-                return error_400("Unable to complete payment, Contact Admin.")
+
+            if not res or not res.get("status"):
+                error_msg = res.get("message", "Unable to complete payment, Contact Admin.") if res else "Unable to complete payment, Contact Admin."
+                return error_400(error_msg)
+
+            data = res.get("data", {})
+            authorization_url = data.get("authorization_url")
+            if not authorization_url:
+                return error_400("Paystack did not return a checkout URL. Contact Admin.")
 
             Payment.objects.create(
                 user=request.user,
@@ -65,7 +72,8 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericVi
                 {
                     "code": 200,
                     "status": "success",
-                    "authorization_url": res["data"]["authorization_url"],
+                    "authorization_url": authorization_url,
+                    "reference": tx_ref,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -96,8 +104,7 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericVi
                 status=status.HTTP_200_OK,
             )
 
-        integration = PaystackIntegration()
-        res = integration.verify_transaction(reference)
+        res = paystack_service.verify_transaction(reference)
         if not res:
             return error_400("Unable to verify payment, Contact Admin.")
 
@@ -105,7 +112,8 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericVi
         if paystack_status:
             self.fulfill_payment(payment, paystack_status)
 
-        integration.update_authorization(payment.user, res.get("authorization", {}))
+        # Authorization (reusable card) update has been moved or is currently not fully implemented
+        # paystack_service.update_authorization(payment.user, res.get("authorization", {}))
 
         return Response(
             {
@@ -123,15 +131,32 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericVi
     )
     @transaction.atomic
     def webhook(self, request):
-        integration = PaystackIntegration()
-        request_data = integration.verify_webhook_data(request)
+        request_data = paystack_service.verify_webhook_data(request)
         if not request_data:
             return error_400("Unable to verify webhook")
 
-        event = request_data["event"]
-        if event == "charge.success":
-            reference = request_data.get("data").get("reference")
+        event_type = request_data.get("event")
+        raw_payload = request_data
+
+        if event_type == "charge.success":
+            reference = request_data.get("data", {}).get("reference")
+            paystack_status = request_data.get("data", {}).get("status", "")
+
             payment = Payment.objects.filter(reference=reference).first()
+
+            # Log the webhook event
+            PaymentWebhookEvent.objects.get_or_create(
+                refid=reference or "",
+                status_id=paystack_status or event_type,
+                defaults={
+                    "payment": payment,
+                    "status_desc": event_type,
+                    "raw_payload": raw_payload,
+                    "source": "paystack",
+                    "processed": False,
+                },
+            )
+
             if not payment:
                 return error_404("Transaction with reference not found.")
 
@@ -144,11 +169,13 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericVi
                     status=status.HTTP_200_OK,
                 )
 
-            paystack_status = request_data.get("data").get("status")
             if paystack_status:
                 self.fulfill_payment(payment, paystack_status)
 
-            integration.update_authorization(payment.user, res.get("authorization", {}))
+            # Mark event processed
+            PaymentWebhookEvent.objects.filter(
+                refid=reference, status_id=paystack_status, source="paystack"
+            ).update(processed=True)
 
             return Response(
                 {
@@ -159,17 +186,30 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, GenericVi
             )
         return error_400("Unexpected event")
 
+    def fulfill_payment(self, payment, paystack_status):
+        if paystack_status == "success":
+            payment.status = choices.PaymentStatus.SUCCESS
+            payment.save()
+
+            if payment.payment_type == choices.PaymentType.WALLET_TOPUP:
+                wallet = Wallet.fetch_for_user(payment.user)
+                wallet.topup(payment.amount)
+            # Add subscription logic here in the future
+        elif paystack_status in ["failed", "reversed"]:
+            payment.status = choices.PaymentStatus.FAILED
+            payment.save()
+
 
 
 @extend_schema(tags=["Payment"])
-class KPayWebhookViewSet(ModelViewSet):
+class PaymentWebhookViewSet(ModelViewSet):
     """
-    KPay Webhook endpoint
-    POST only (KPay callbacks)
+    Payment Webhook endpoint
+    POST only (payment gateway callbacks)
     """
 
-    queryset = KPayWebhookEvent.objects.all()
-    serializer_class = KPayWebhookSerializer
+    queryset = PaymentWebhookEvent.objects.all()
+    serializer_class = PaymentWebhookSerializer
     permission_classes = [AllowAny]
     http_method_names = ["post"]
 
@@ -200,14 +240,19 @@ class KPayWebhookViewSet(ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Try to link to the Payment record
+        payment = Payment.objects.filter(reference=refid).first()
+
         # ---- Idempotency: do not reprocess same status ----
-        event, created = KPayWebhookEvent.objects.get_or_create(
+        event, created = PaymentWebhookEvent.objects.get_or_create(
             refid=refid,
             status_id=status_id,
             defaults={
+                "payment": payment,
                 "transaction_id": transaction_id,
-                "status_desc": status_desc,
+                "status_desc": status_desc or "",
                 "raw_payload": payload,
+                "source": "kpay",
             },
         )
 

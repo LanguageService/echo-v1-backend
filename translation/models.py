@@ -49,6 +49,17 @@ class BaseTranslation(BaseModel):
     session_id = models.CharField(max_length=100, blank=True, null=True)
     error_message = models.TextField(blank=True, null=True)
     total_processing_time = models.FloatField(default=0.0)
+    is_favorite = models.BooleanField(default=False, help_text="Whether the user has favorited this translation")
+        
+    # Advanced tracking
+    processing_steps = models.JSONField(default=dict, blank=True, help_text="Time tracking per step (e.g. STT, TTS, Translation)")
+    metadata = models.JSONField(default=dict, blank=True, help_text="Extra metadata like token usage, cost, model versions")
+    
+    # Billing Tracking
+    channel = models.CharField(max_length=10, default="UI", help_text="UI or API")
+    units_processed = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="e.g. Minutes, Pages, or Million Characters")
+    billing_cost_deducted = models.DecimalField(max_digits=14, decimal_places=6, default=0, help_text="Cost deducted from wallet")
+    billing_currency_used = models.CharField(max_length=10, default="CREDITS", help_text="CREDITS or USD")
     
     class Meta:
         abstract = True
@@ -266,9 +277,25 @@ class LanguageSupport(BaseModel):
     image_translation_supported = models.BooleanField(default=True)
     document_translation_supported = models.BooleanField(default=True)
     is_african_language = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True, help_text="Whether this language is currently active for translations")
     
     class Meta:
         ordering = ['name']
         
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+class AnonymousTrial(BaseModel):
+    """Model to track anonymous user translation trials (STS, TTS, Text) to enforce limits."""
+    ip_address = models.GenericIPAddressField()
+    device_id = models.CharField(max_length=255, blank=True, null=True)
+    attempts = models.IntegerField(default=0)
+    last_used = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-last_used']
+        verbose_name = "Anonymous Trial"
+        verbose_name_plural = "Anonymous Trials"
+
+    def __str__(self):
+        return f"Trial {self.ip_address} - {self.attempts} attempts"

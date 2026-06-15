@@ -379,6 +379,7 @@ class AuthViewSet(GenericViewSet):
                         first_name=first_name,
                         last_name=last_name,
                         is_verified=True,
+                        is_active=True,
                         user_type=User.CUSTOMER,
                     )
                     user.set_unusable_password()
@@ -394,8 +395,9 @@ class AuthViewSet(GenericViewSet):
                     # Send welcome email for new Google Auth users
                     EmailDispatcher.send_onboarding(user)
                     
-                elif not user.is_verified:
+                elif not user.is_verified or not user.is_active:
                     user.is_verified = True
+                    user.is_active = True
                     user.save()
                 
                 # Use LoginSerializer to get token pair

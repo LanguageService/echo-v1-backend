@@ -18,8 +18,31 @@ from ..serializers import (
 from ..orchestrator import TranslationOrchestrator
 from ..choices import TranslationMode, TranslationStatus, SpeechServiceType
 from ..tasks import async_ebook_translation_task, async_voice_translation_task, async_stt_task, async_tts_task
+from ..models import AnonymousTrial
+
+def get_client_ip(request):
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        return x_forwarded_for.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+def check_and_increment_trial(request):
+    if getattr(request.user, 'is_authenticated', False):
+        return None  # Authenticated users have no trial limit here
+    
+    ip_address = get_client_ip(request)
+    trial, created = AnonymousTrial.objects.get_or_create(ip_address=ip_address)
+    
+    if trial.attempts >= 3:
+        return Response({"error": "TRIAL_LIMIT_REACHED", "message": "You have reached the maximum number of free trials. Please sign up to continue."}, status=status.HTTP_403_FORBIDDEN)
+    
+    trial.attempts += 1
+    trial.save()
+    return None
 
 
+
+from billing.permissions import HasTranslationQuota
 
 class BaseTranslationViewSet(
     mixins.ListModelMixin,
@@ -28,11 +51,42 @@ class BaseTranslationViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet
 ):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny, HasTranslationQuota]
     filter_backends = [DjangoFilterBackend]
 
+    @action(detail=False, methods=['post'], url_path='presigned-url')
+    def presigned_url(self, request):
+        """Generate a presigned URL for direct S3 uploads"""
+        if not getattr(request.user, 'is_authenticated', False):
+            return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        file_name = request.data.get('file_name')
+        file_type = request.data.get('file_type') # e.g., 'audio', 'document'
+        content_type = request.data.get('content_type')
+        
+        if not file_name or not file_type:
+            return Response({"error": "file_name and file_type are required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        from ..cloud_storage import cloud_storage
+        url_data = cloud_storage.generate_presigned_url(
+            file_name=file_name,
+            file_type=file_type,
+            user_id=str(request.user.id),
+            content_type=content_type
+        )
+        
+        if not url_data:
+            return Response({"error": "Cloud storage not configured or failed to generate URL"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        return Response(url_data)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user if getattr(self.request.user, 'is_authenticated', False) else None)
+
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
+        if getattr(self.request.user, 'is_authenticated', False):
+            return self.queryset.filter(user=self.request.user)
+        return self.queryset.none()
 
     def get_serializer_class(self):
         if self.action in ['partial_update', 'update']:
@@ -65,6 +119,9 @@ class TextTranslationViewSet(BaseTranslationViewSet):
     @action(detail=False, methods=['post'], url_path='base')
     def base(self, request):
         """Short sentence translation"""
+        trial_response = check_and_increment_trial(request)
+        if trial_response: return trial_response
+
         serializer = TextShortRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -87,6 +144,9 @@ class TextTranslationViewSet(BaseTranslationViewSet):
     @action(detail=False, methods=['post'], url_path='document', parser_classes=(MultiPartParser, FormParser))
     def document(self, request):
         """Document/Large text translation"""
+        trial_response = check_and_increment_trial(request)
+        if trial_response: return trial_response
+
         import os
         import tempfile
 
@@ -131,6 +191,9 @@ class TextTranslationViewSet(BaseTranslationViewSet):
     @action(detail=False, methods=['post'], url_path='document-direct', parser_classes=(MultiPartParser, FormParser))
     def document_direct(self, request):
         """Direct/Synchronous Document translation (blocks until finished)"""
+        trial_response = check_and_increment_trial(request)
+        if trial_response: return trial_response
+
         import os
         import tempfile
 
@@ -199,6 +262,9 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
     @action(detail=False, methods=['post'], url_path='base')
     def base(self, request):
         """Short speech translation (STS)"""
+        trial_response = check_and_increment_trial(request)
+        if trial_response: return trial_response
+
         serializer = SpeechShortRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -221,6 +287,9 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
     @action(detail=False, methods=['post'], url_path='document', parser_classes=(MultiPartParser, FormParser))
     def document(self, request):
         """Large speech translation (STS)"""
+        trial_response = check_and_increment_trial(request)
+        if trial_response: return trial_response
+
         serializer = SpeechLargeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -260,6 +329,9 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
         """
         Speech to Text Translation
         """
+        trial_response = check_and_increment_trial(request)
+        if trial_response: return trial_response
+
         serializer = STTRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -332,6 +404,9 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
         """
         Text to Speech Translation
         """
+        trial_response = check_and_increment_trial(request)
+        if trial_response: return trial_response
+
         serializer = TTSRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
