@@ -79,7 +79,11 @@ class GeminiTranslationService(BaseTranslationService):
         super().__init__(TranslationProvider.GEMINI)
         if self.is_available:
             from google import genai
-            self.client = genai.Client(api_key=GEMINI_API_KEY)
+            from google.genai import types as _genai_types
+            self.client = genai.Client(
+                api_key=GEMINI_API_KEY,
+                http_options=_genai_types.HttpOptions(client_args={"http2": False})
+            )
     
     def _check_availability(self) -> bool:
         return bool(GEMINI_API_KEY)

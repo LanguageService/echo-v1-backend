@@ -280,6 +280,113 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
         )
         return Response(result, status=status.HTTP_201_CREATED if result.get('success') else status.HTTP_400_BAD_REQUEST)
 
+    # ------------------------------------------------------------------
+    # Demo endpoint — unauthenticated, IP-based 3-attempt trial limit
+    # ------------------------------------------------------------------
+    DEMO_TRIAL_LIMIT = 3
+
+    @extend_schema(
+        tags=["Demo"],
+        summary="Demo Speech Translation (unauthenticated)",
+        description=(
+            "Public speech-to-speech translation endpoint for the landing-page demo. "
+            "No authentication required. Limited to 3 attempts per IP address, tracked "
+            "in the AnonymousTrial table. Returns trial progress in every response."
+        ),
+        request=SpeechShortRequestSerializer,
+        responses={
+            200: SpeechTranslationSerializer,
+            403: OpenApiResponse(description="Trial limit reached"),
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="demo",
+        permission_classes=[],           # AllowAny — no auth required
+        parser_classes=(MultiPartParser, FormParser),
+    )
+    def demo(self, request):
+        """
+        Dedicated demo endpoint for unauthenticated visitors.
+
+        - Accepts an audio file and language pair.
+        - Enforces a hard limit of 3 attempts per IP address.
+        - Returns trial_attempts_used and trial_attempts_remaining in the response
+          so the frontend can keep its counter in sync.
+        - Uses the full TranslationOrchestrator pipeline (same quality as paid).
+        """
+        LIMIT = self.DEMO_TRIAL_LIMIT
+        ip_address = get_client_ip(request)
+
+        # Fetch or create the trial record for this IP
+        trial, _ = AnonymousTrial.objects.get_or_create(ip_address=ip_address)
+
+        # Enforce limit BEFORE running translation (don't waste AI credits)
+        if trial.attempts >= LIMIT:
+            return Response(
+                {
+                    "error": "TRIAL_LIMIT_REACHED",
+                    "message": (
+                        "You have used all 3 free demo attempts. "
+                        "Create a free account to continue translating."
+                    ),
+                    "trial_attempts_used": trial.attempts,
+                    "trial_attempts_remaining": 0,
+                    "trial_limit": LIMIT,
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Validate request data
+        serializer = SpeechShortRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Invalid request", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Run the full STS pipeline (same as /speech/base/)
+        orchestrator = TranslationOrchestrator()
+        result = orchestrator.translate_speech(
+            user=None,              # anonymous — no user object
+            audio_file=serializer.validated_data.get("audio_file"),
+            target_lang=serializer.validated_data["target_language"],
+            source_lang=serializer.validated_data.get("source_language", "auto"),
+            mode=TranslationMode.SHORT,
+            original_file_url=serializer.validated_data.get("original_file_url"),
+            title="Demo Translation",
+        )
+
+        if not result.get("success"):
+            # Translation failed — do NOT consume a trial attempt
+            return Response(
+                {
+                    "error": result.get("error", "Translation failed"),
+                    "trial_attempts_used": trial.attempts,
+                    "trial_attempts_remaining": LIMIT - trial.attempts,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Success — increment the attempt counter
+        trial.attempts += 1
+        trial.save(update_fields=["attempts", "last_used"])
+
+        attempts_used = trial.attempts
+        attempts_remaining = max(0, LIMIT - attempts_used)
+
+        return Response(
+            {
+                **result,
+                "trial_attempts_used": attempts_used,
+                "trial_attempts_remaining": attempts_remaining,
+                "trial_limit": LIMIT,
+            },
+            status=status.HTTP_200_OK,
+        )
+
     @extend_schema(
         request=SpeechLargeRequestSerializer,
         responses={202: OpenApiResponse(description="Accepted for background processing")}
@@ -306,10 +413,22 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
         )
         
         if serializer.validated_data.get('audio_file'):
-            translation.original_audio.save(
-                f"large_input_{translation.id}.wav", 
-                serializer.validated_data['audio_file']
-            )
+            from ..cloud_storage import cloud_storage
+            if cloud_storage.is_available():
+                url = cloud_storage.upload_voice_input_file(
+                    file=serializer.validated_data['audio_file'],
+                    language=serializer.validated_data.get('source_language', 'auto'),
+                    user_id=str(request.user.id if request.user.is_authenticated else 'anonymous')
+                )
+                if url:
+                    translation.original_audio_url = url
+                    translation.original_audio.name = None
+                    translation.save()
+            else:
+                translation.original_audio.save(
+                    f"large_input_{translation.id}.wav", 
+                    serializer.validated_data['audio_file']
+                )
         
         _tid = str(translation.id)
         transaction.on_commit(lambda: async_voice_translation_task.delay(_tid))
@@ -373,10 +492,22 @@ class SpeechTranslationViewSet(BaseTranslationViewSet):
             )
             
             if serializer.validated_data.get('audio_file'):
-                translation.original_audio.save(
-                    f"stt_large_input_{translation.id}.wav", 
-                    serializer.validated_data['audio_file']
-                )
+                from ..cloud_storage import cloud_storage
+                if cloud_storage.is_available():
+                    url = cloud_storage.upload_voice_input_file(
+                        file=serializer.validated_data['audio_file'],
+                        language=serializer.validated_data.get('source_language', 'auto'),
+                        user_id=str(request.user.id if request.user.is_authenticated else 'anonymous')
+                    )
+                    if url:
+                        translation.original_audio_url = url
+                        translation.original_audio.name = None
+                        translation.save()
+                else:
+                    translation.original_audio.save(
+                        f"stt_large_input_{translation.id}.wav", 
+                        serializer.validated_data['audio_file']
+                    )
             
             _stt_kwargs = dict(
                 user_id=request.user.id,

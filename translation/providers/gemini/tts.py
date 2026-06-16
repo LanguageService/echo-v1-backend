@@ -6,13 +6,17 @@ import base64
 from typing import Dict, Any, Optional
 from google import genai
 from google.genai import types
+from google.genai import types
 from django.conf import settings
 from translation.providers.base import BaseTTSProvider
 
 logger = logging.getLogger(__name__)
 
-# Initialize GenAI client
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
+# Initialize GenAI client with HTTP/2 disabled to prevent protocol errors
+client = genai.Client(
+    api_key=settings.GEMINI_API_KEY,
+    http_options=types.HttpOptions(client_args={"http2": False})
+)
 
 class GeminiTTSProvider(BaseTTSProvider):
     """Gemini-based Text-to-Speech (TTS) provider"""

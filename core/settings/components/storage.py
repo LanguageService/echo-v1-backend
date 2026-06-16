@@ -20,3 +20,9 @@ CLOUDINARY_STORAGE = {
     'API_SECRET': config('CLOUDINARY_API_SECRET'),
 }
 
+
+# Set DEFAULT_FILE_STORAGE to Cloudinary in non-production environments (dev/local/etc.)
+# This ensures all model FileFields and ImageFields automatically save to Cloudinary.
+if config('ENV_MODE', default='prod') != 'prod':
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+

@@ -26,8 +26,12 @@ DetectorFactory.seed = 0
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Gemini client
-client = genai.Client(api_key=config("GEMINI_API_KEY",""))
+# Initialize Gemini client with HTTP/2 disabled to prevent protocol errors
+from google.genai import types as _genai_types
+client = genai.Client(
+    api_key=config("GEMINI_API_KEY",""),
+    http_options=_genai_types.HttpOptions(client_args={"http2": False})
+)
 
 
 class GeminiVisionProcessor:

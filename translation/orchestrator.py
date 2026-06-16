@@ -225,7 +225,7 @@ class TranslationOrchestrator:
                 translation_record.status = TranslationStatus.COMPLETED
                 
                 # Calculate billing cost (Text = per million characters)
-                if text:
+                if text and user and not user.is_anonymous:
                     from billing.services import BillingService
                     from decimal import Decimal
                     units = Decimal(str(len(text))) / Decimal('1000000.0')
@@ -338,15 +338,16 @@ class TranslationOrchestrator:
             
             # Calculate billing cost (Speech = per minute)
             # TODO: Extract exact audio duration. Using 1.0 minute default for now.
-            from billing.services import BillingService
-            from decimal import Decimal
-            units = Decimal('1.0')
-            billing_res = BillingService.calculate_and_deduct_cost(user, channel, 'STS', units)
-            if billing_res['success']:
-                translation_record.billing_cost_deducted = billing_res['cost_deducted']
-                translation_record.billing_currency_used = billing_res['currency']
-                translation_record.units_processed = units
-                translation_record.channel = channel
+            if user and not user.is_anonymous:
+                from billing.services import BillingService
+                from decimal import Decimal
+                units = Decimal('1.0')
+                billing_res = BillingService.calculate_and_deduct_cost(user, channel, 'STS', units)
+                if billing_res['success']:
+                    translation_record.billing_cost_deducted = billing_res['cost_deducted']
+                    translation_record.billing_currency_used = billing_res['currency']
+                    translation_record.units_processed = units
+                    translation_record.channel = channel
                 
             translation_record.save()
             
@@ -449,15 +450,16 @@ class TranslationOrchestrator:
             translation_record.total_processing_time = time.time() - start_time
             
             # Calculate billing cost (Speech-to-Text = per minute)
-            from billing.services import BillingService
-            from decimal import Decimal
-            units = Decimal('1.0')
-            billing_res = BillingService.calculate_and_deduct_cost(user, channel, 'STT', units)
-            if billing_res['success']:
-                translation_record.billing_cost_deducted = billing_res['cost_deducted']
-                translation_record.billing_currency_used = billing_res['currency']
-                translation_record.units_processed = units
-                translation_record.channel = channel
+            if user and not user.is_anonymous:
+                from billing.services import BillingService
+                from decimal import Decimal
+                units = Decimal('1.0')
+                billing_res = BillingService.calculate_and_deduct_cost(user, channel, 'STT', units)
+                if billing_res['success']:
+                    translation_record.billing_cost_deducted = billing_res['cost_deducted']
+                    translation_record.billing_currency_used = billing_res['currency']
+                    translation_record.units_processed = units
+                    translation_record.channel = channel
                 
             translation_record.save()
             
@@ -607,8 +609,11 @@ class TranslationOrchestrator:
             from google.genai import types
             from django.conf import settings
             
-            # Using the same client as providers for consistency
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            # Using the same client as providers for consistency, HTTP/2 disabled to prevent ProtocolError
+            client = genai.Client(
+                api_key=settings.GEMINI_API_KEY,
+                http_options=types.HttpOptions(client_args={"http2": False})
+            )
             
             # Note: We're doing a manual call here for Image, 
             # ideally this should also be a provider but let's log it manually

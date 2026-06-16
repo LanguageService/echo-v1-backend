@@ -21,6 +21,17 @@ import cloudinary.api
 logger = logging.getLogger(__name__)
 
 
+class StorageConfigMock:
+    """Mock storage configuration when database access fails during bootstrap"""
+    def __init__(self, name, provider, bucket_name, region, credentials_env_prefix, endpoint_url=None):
+        self.name = name
+        self.provider = provider
+        self.bucket_name = bucket_name
+        self.region = region
+        self.credentials_env_prefix = credentials_env_prefix
+        self.endpoint_url = endpoint_url
+
+
 class CloudStorageService:
     """Service for handling cloud storage operations"""
     
@@ -30,13 +41,51 @@ class CloudStorageService:
         # Deferred initialization to allow importing without Django setup
     
     def _get_active_config(self):
-        """Get the active cloud storage configuration"""
+        """Get the active cloud storage configuration based on ENV_MODE"""
+        env_mode = config("ENV_MODE", default="prod")
         try:
             from .models import CloudStorageConfig
-            return CloudStorageConfig.objects.filter(is_active=True).first()
+            
+            if env_mode == "prod":
+                cfg = CloudStorageConfig.objects.filter(provider="s3").first()
+                if not cfg:
+                    cfg = CloudStorageConfig(
+                        name="Amazon S3 (Auto)",
+                        provider="s3",
+                        bucket_name=config("S3_BUCKET_NAME", default="echo-translation-bucket"),
+                        region=config("AWS_REGION", default="us-east-1"),
+                        credentials_env_prefix="AWS"
+                    )
+                return cfg
+            else:
+                cfg = CloudStorageConfig.objects.filter(provider="cloudinary").first()
+                if not cfg:
+                    cfg = CloudStorageConfig(
+                        name="Cloudinary (Auto)",
+                        provider="cloudinary",
+                        bucket_name="cloudinary",
+                        region="global",
+                        credentials_env_prefix="CLOUDINARY"
+                    )
+                return cfg
         except Exception as e:
-            logger.error(f"Failed to get cloud storage config: {e}")
-            return None
+            logger.warning(f"Failed to get cloud storage config from database: {e}. Using mock configuration.")
+            if env_mode == "prod":
+                return StorageConfigMock(
+                    name="Amazon S3",
+                    provider="s3",
+                    bucket_name=config("S3_BUCKET_NAME", default="echo-translation-bucket"),
+                    region=config("AWS_REGION", default="us-east-1"),
+                    credentials_env_prefix="AWS"
+                )
+            else:
+                return StorageConfigMock(
+                    name="Cloudinary",
+                    provider="cloudinary",
+                    bucket_name="cloudinary",
+                    region="global",
+                    credentials_env_prefix="CLOUDINARY"
+                )
     
     def _initialize_client(self):
         """Initialize the appropriate cloud storage client using environment variables"""
@@ -48,14 +97,21 @@ class CloudStorageService:
             
             if self.config.provider == 's3':
                 import boto3
-               
-
-                # Get S3 credentials from environment
-                access_key = config(f'{prefix}_ACCESS_KEY')
-                secret_key = config(f'{prefix}_SECRET_KEY')
+                
+                # Get S3 credentials (try custom prefix first, fallback to standard AWS environment variables)
+                access_key = (
+                    config(f'{prefix}_ACCESS_KEY', default=None)
+                    or config('AWS_ACCESS_KEY_ID', default=None)
+                    or config('AWS_ACCESS_KEY', default=None)
+                )
+                secret_key = (
+                    config(f'{prefix}_SECRET_KEY', default=None)
+                    or config('AWS_SECRET_ACCESS_KEY', default=None)
+                    or config('AWS_SECRET_KEY', default=None)
+                )
                 
                 if not access_key or not secret_key:
-                    logger.error(f"Missing S3 credentials. Expected: {prefix}_ACCESS_KEY and {prefix}_SECRET_KEY")
+                    logger.error(f"Missing S3 credentials. Expected: {prefix}_ACCESS_KEY / AWS_ACCESS_KEY_ID")
                     return
                 
                 self.client = boto3.client(
@@ -91,17 +147,16 @@ class CloudStorageService:
                 self.client = storage.Client()
 
             elif self.config.provider == 'cloudinary':
-                 # Get Cloudinary credentials from environment
-                cloud_name = config(f'{prefix}_CLOUD_NAME')
-                api_key = config(f'{prefix}_API_KEY')
-                api_secret = config(f'{prefix}_API_SECRET')
+                # Get Cloudinary credentials from environment
+                cloud_name = config(f'{prefix}_CLOUD_NAME', default=None) or config('CLOUDINARY_CLOUD_NAME', default=None)
+                api_key = config(f'{prefix}_API_KEY', default=None) or config('CLOUDINARY_API_KEY', default=None)
+                api_secret = config(f'{prefix}_API_SECRET', default=None) or config('CLOUDINARY_API_SECRET', default=None)
                 
                 if not cloud_name or not api_key or not api_secret:
-                    logger.error(f"Missing Cloudinary credentials. Expected: {prefix}_CLOUD_NAME, {prefix}_API_KEY, {prefix}_API_SECRET")
+                    logger.error("Missing Cloudinary credentials.")
                     return
 
-                # Configure Cloudinary globally or specifically for this instance if needed
-                # Since cloudinary library uses global config, we set it here
+                # Configure Cloudinary globally
                 cloudinary.config(
                     cloud_name=cloud_name,
                     api_key=api_key,
@@ -115,10 +170,6 @@ class CloudStorageService:
     
     def is_available(self) -> bool:
         """Check if cloud storage is properly configured and available"""
-        # 1. Disable cloud storage unless in production environment
-        if config("ENV_MODE", default="prod") != "prod":
-            return False
-            
         if self.config is None:
             self.config = self._get_active_config()
             if self.config:
@@ -132,9 +183,9 @@ class CloudStorageService:
         
         # Try provider-specific environment variable first
         if self.config.provider == 's3':
-            bucket_name = config('S3_BUCKET_NAME')
+            bucket_name = config('S3_BUCKET_NAME', default=None) or config('AWS_STORAGE_BUCKET_NAME', default=None)
         elif self.config.provider == 'gcs':
-            bucket_name = config('GCS_BUCKET_NAME')
+            bucket_name = config('GCS_BUCKET_NAME', default=None)
         else:
             bucket_name = None
             
@@ -142,7 +193,7 @@ class CloudStorageService:
             return bucket_name
         
         # Fall back to config bucket name
-        if self.config.bucket_name:
+        if hasattr(self.config, 'bucket_name') and self.config.bucket_name:
             return self.config.bucket_name
         
         # Default fallback
@@ -196,13 +247,10 @@ class CloudStorageService:
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'audio'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
 
-        if config("ENV_MODE", default="prod") != "prod":
+        if not self.is_available():
+            logger.warning("Cloud storage not available - falling back to local storage")
             content = file.read() if hasattr(file, 'read') else b''
             return self._local_store(filename, content, 'speech/input')
-
-        if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/speech/{filename}"
@@ -216,12 +264,9 @@ class CloudStorageService:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
 
-        if config("ENV_MODE", default="prod") != "prod":
-            return self._local_store(filename, file_content, 'speech/output')
-
         if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
+            logger.warning("Cloud storage not available - falling back to local storage")
+            return self._local_store(filename, file_content, 'speech/output')
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/speech/{filename}"
@@ -236,13 +281,10 @@ class CloudStorageService:
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'jpg'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
 
-        if config("ENV_MODE", default="prod") != "prod":
+        if not self.is_available():
+            logger.warning("Cloud storage not available - falling back to local storage")
             content = file.read() if hasattr(file, 'read') else b''
             return self._local_store(filename, content, 'image/input')
-
-        if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/image/{filename}"
@@ -257,13 +299,10 @@ class CloudStorageService:
         file_extension = file.name.split('.')[-1] if '.' in file.name else 'doc'
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
 
-        if config("ENV_MODE", default="prod") != "prod":
+        if not self.is_available():
+            logger.warning("Cloud storage not available - falling back to local storage")
             content = file.read() if hasattr(file, 'read') else b''
             return self._local_store(filename, content, 'text/input')
-
-        if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/text/{filename}"
@@ -277,14 +316,11 @@ class CloudStorageService:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{user_id}_{timestamp}_{uuid.uuid4().hex[:8]}.{file_format}"
 
-        if config("ENV_MODE", default="prod") != "prod":
+        if not self.is_available():
+            logger.warning("Cloud storage not available - falling back to local storage")
             with open(file_path, 'rb') as f:
                 content = f.read()
             return self._local_store(filename, content, 'text/output')
-
-        if not self.is_available():
-            logger.warning("Cloud storage not available")
-            return None
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/text/{filename}"

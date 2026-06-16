@@ -45,7 +45,7 @@ class ConnectionPoolManager:
             self.pools[service] = httpx.AsyncClient(
                 limits=limits,
                 timeout=timeout,
-                http2=True  # Enable HTTP/2 for better performance
+                http2=False  # HTTP/2 disabled: causes ProtocolError with some proxies and the Gemini SDK
             )
         
         return self.pools[service]
@@ -86,7 +86,7 @@ class OptimizedGeminiClient:
         self._initialize_client()
     
     def _initialize_client(self):
-        """Initialize Gemini client with connection pooling"""
+        """Initialize Gemini client with HTTP/2 disabled to prevent protocol errors."""
         try:
             api_key = GEMINI_API_KEY
             if not api_key:
@@ -96,8 +96,10 @@ class OptimizedGeminiClient:
             # Create optimized HTTP client for Gemini
             http_client = self.connection_manager.get_http_client('gemini')
             
+            from google.genai import types as _genai_types
             self.client = genai.Client(
                 api_key=api_key,
+                http_options=_genai_types.HttpOptions(client_args={"http2": False}),
                 # http_client=http_client  # Enable when Gemini SDK supports it
             )
             

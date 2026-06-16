@@ -3,13 +3,17 @@ import time
 from typing import Dict, Any, BinaryIO
 from google import genai
 from google.genai import types
+from google.genai import types
 from django.conf import settings
 from translation.providers.base import BaseASRProvider
 
 logger = logging.getLogger(__name__)
 
-# Initialize GenAI client
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
+# Initialize GenAI client with HTTP/2 disabled to prevent protocol errors
+client = genai.Client(
+    api_key=settings.GEMINI_API_KEY,
+    http_options=types.HttpOptions(client_args={"http2": False})
+)
 
 class GeminiASRProvider(BaseASRProvider):
     """Gemini-based Speech-to-Text (ASR) provider"""

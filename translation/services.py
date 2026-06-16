@@ -37,8 +37,12 @@ logger = logging.getLogger(__name__)
 
 
 
-# Initialize Gemini client
-client = genai.Client(api_key=config("GEMINI_API_KEY",""))
+# Initialize Gemini client with HTTP/2 disabled to prevent protocol errors
+from google.genai import types
+client = genai.Client(
+    api_key=config("GEMINI_API_KEY",""),
+    http_options=types.HttpOptions(client_args={"http2": False})
+)
 
 
 class GeminiService:

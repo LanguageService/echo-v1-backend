@@ -257,6 +257,18 @@ if config('VERCEL', default='False') == 'True' or config('RENDER', default='Fals
     MEDIA_ROOT = '/tmp'
 else:
     MEDIA_ROOT = BASE_DIR / 'media'
+    # Self-healing check: if MEDIA_ROOT is not writable, automatically fall back to /tmp
+    try:
+        os.makedirs(MEDIA_ROOT, exist_ok=True)
+        # Test write permission by writing a tiny temp file
+        test_file = os.path.join(str(MEDIA_ROOT), '.write_test')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+    except (OSError, IOError) as e:
+        import logging
+        logging.getLogger(__name__).warning(f"MEDIA_ROOT '{MEDIA_ROOT}' is not writable ({e}). Falling back to '/tmp'.")
+        MEDIA_ROOT = '/tmp'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
