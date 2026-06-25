@@ -256,7 +256,12 @@ MEDIA_URL = '/media/'
 if config('VERCEL', default='False') == 'True' or config('RENDER', default='False') == 'True' or config('K_SERVICE', default=''):
     MEDIA_ROOT = '/tmp'
 else:
-    MEDIA_ROOT = BASE_DIR / 'media'
+    env_media_root = config('MEDIA_ROOT', default='')
+    if env_media_root:
+        MEDIA_ROOT = Path(env_media_root)
+    else:
+        MEDIA_ROOT = BASE_DIR / 'media'
+        
     # Self-healing check: if MEDIA_ROOT is not writable, automatically fall back to /tmp
     try:
         os.makedirs(MEDIA_ROOT, exist_ok=True)
@@ -266,8 +271,9 @@ else:
             f.write('test')
         os.remove(test_file)
     except (OSError, IOError) as e:
-        import logging
-        logging.getLogger(__name__).warning(f"MEDIA_ROOT '{MEDIA_ROOT}' is not writable ({e}). Falling back to '/tmp'.")
+        if e.errno != 30:  # Don't warn for Read-only file system (Errno 30)
+            import logging
+            logging.getLogger(__name__).warning(f"MEDIA_ROOT '{MEDIA_ROOT}' is not writable ({e}). Falling back to '/tmp'.")
         MEDIA_ROOT = '/tmp'
 
 # Default primary key field type
