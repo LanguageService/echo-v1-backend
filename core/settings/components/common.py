@@ -294,7 +294,9 @@ CSRF_TRUSTED_ORIGINS = [
     "https://letusechoo.vercel.app",
     "https://*.vercel.app",
     "https://letusecho.com",
-    "https://*.letusecho.com"
+    "https://www.letusecho.com",
+    "https://*.letusecho.com",
+    
 ]
 
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
@@ -324,6 +326,7 @@ CORS_ALLOWED_ORIGINS = [
    "https://letusecho.vercel.app",  # Frontend Local
    "https://letusechoo.vercel.app",
    "https://letusecho.com",
+   "https://www.letusecho.com",
 ]
 
 # Django Spectacular settings
