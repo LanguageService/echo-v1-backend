@@ -41,8 +41,22 @@ coverage.xml
 *.cover
 
 # ── Celery ───────────────────────────────────────────────────────────────
-celerybeat-schedule
+celerybeat-schedule*
 celerybeat.pid
+
+# ── Terraform ────────────────────────────────────────────────────────────
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
 
 # ── Logs ─────────────────────────────────────────────────────────────────
 *.log

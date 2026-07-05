@@ -8,12 +8,12 @@ x-app-env: &app-env
   ENV_MODE: ${ENV_MODE:-local}
   DEBUG: "True"
   SECRET_KEY: django-insecure-secret-key-for-local-compose
-  DATABASE_URL: postgresql://postgres:postgres@db:5432/echo_db
-  DATABASE_HOST: db
-  DATABASE_PORT: "5432"
-  DATABASE_USER: postgres
-  DATABASE_NAME: echo_db
-  DATABASE_PASSWORD: postgres
+  DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/echo_db}
+  DATABASE_HOST: ${DATABASE_HOST:-db}
+  DATABASE_PORT: ${DATABASE_PORT:-"5432"}
+  DATABASE_USER: ${DATABASE_USER:-postgres}
+  DATABASE_NAME: ${DATABASE_NAME:-echo_db}
+  DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: redis://redis:6379/0
@@ -25,25 +25,6 @@ x-app-env: &app-env
 
 # ── Services ──────────────────────────────────────────────────────────────────
 services:
-  db:
-    image: postgres:16-alpine
-    container_name: echo_db
-    environment:
-      POSTGRES_DB: echo_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      # 5433 on host avoids conflict with a local Postgres already on 5432.
-      # Inter-container traffic still uses db:5432 via the Docker network.
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: echo_redis
@@ -65,12 +46,10 @@ services:
       - media_volume:/app/media
       - static_volume:/app/staticfiles_build
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       <<: *app-env
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -84,8 +63,6 @@ services:
     environment:
       <<: *app-env
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -98,13 +75,6 @@ services:
       - media_volume:/app/media
     environment:
       <<: *app-env
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
 volumes:
-  postgres_data:
   media_volume:
   static_volume:
