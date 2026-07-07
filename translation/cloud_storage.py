@@ -254,7 +254,7 @@ class CloudStorageService:
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/speech/{filename}"
-        return self._upload_file(file, folder_path)
+        return self._upload_file(file, folder_path, resource_type="video")
     
     def upload_voice_output_file(self, file_content: bytes, language: str, user_id: str, file_format: str = 'wav') -> Optional[str]:
         """
@@ -288,7 +288,7 @@ class CloudStorageService:
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/image/{filename}"
-        return self._upload_file(file, folder_path)
+        return self._upload_file(file, folder_path, resource_type="image")
     
     def upload_document_input_file(self, file: UploadedFile, language: str, user_id: str) -> Optional[str]:
         """
@@ -306,7 +306,7 @@ class CloudStorageService:
 
         user_hex = self._get_user_hex(user_id)
         folder_path = f"translation/{user_hex}/text/{filename}"
-        return self._upload_file(file, folder_path)
+        return self._upload_file(file, folder_path, resource_type="raw")
 
     def upload_document_output_file(self, file_path: str, language: str, user_id: str, file_format: str) -> Optional[str]:
         """
@@ -337,18 +337,23 @@ class CloudStorageService:
                 'xls': 'application/vnd.ms-excel',
             }.get(file_format.lower(), 'application/octet-stream')
             content_file.content_type = content_type
-            return self._upload_file(content_file, folder_path)
+            return self._upload_file(content_file, folder_path, resource_type="raw")
     
-    def _upload_file(self, file: UploadedFile, folder_path: str) -> Optional[str]:
+    def _upload_file(self, file: UploadedFile, folder_path: str, resource_type: str = "auto") -> Optional[str]:
         """Upload a Django UploadedFile to cloud storage"""
         try:
             bucket_name = self.get_bucket_name()
             if self.config.provider == 's3':
+                extra_args = {'ContentType': file.content_type or 'application/octet-stream'}
+                if resource_type == 'raw' and 'pdf' not in (file.content_type or '').lower():
+                    # Only force attachment for non-PDF raw files if needed, 
+                    # but actually let's just allow inline for everything to enable previews
+                    pass
                 self.client.upload_fileobj(
                     file,
                     bucket_name,
                     folder_path,
-                    ExtraArgs={'ContentType': file.content_type or 'application/octet-stream'}
+                    ExtraArgs=extra_args
                 )
                 return f"https://{bucket_name}.s3.{self.config.region}.amazonaws.com/{folder_path}"
                 
@@ -363,13 +368,14 @@ class CloudStorageService:
                 # Cloudinary appends the format extension to the URL automatically, so we must
                 # strip the extension from public_id to avoid double extensions like .pdf.pdf
                 public_id = folder_path
-                if '.' in public_id.split('/')[-1]:
+                if resource_type != 'raw' and '.' in public_id.split('/')[-1]:
                     public_id = public_id.rsplit('.', 1)[0]
 
                 response = cloudinary.uploader.upload(
                     file,
                     public_id=public_id,
-                    resource_type="auto"
+                    resource_type=resource_type,
+                    type="authenticated"
                 )
                 return response.get('secure_url')
                  
@@ -423,6 +429,71 @@ class CloudStorageService:
             logger.error(f"Failed to upload bytes to {self.config.provider}: {e}")
             return None
             
+    def private_download_url(self, file_url: str) -> str:
+        """
+        Generate a fresh, signed URL for an authenticated resource.
+        Useful when returning URLs to the frontend.
+        """
+        if not self.config:
+            self.config = self._get_active_config()
+            self._initialize_client()
+            
+        if not self.config or not file_url:
+            return file_url
+            
+        if self.config.provider == 'cloudinary' and 'cloudinary.com' in file_url:
+            # We always want to sign URLs, even if they were uploaded as 'upload' but migrated, 
+            # or if they are PDFs which are blocked by default.
+            try:
+                # Extract parts
+                parts = file_url.split('/')
+                # Find version index or upload/authenticated
+                type_idx = -1
+                version_idx = -1
+                for i, p in enumerate(parts):
+                    if p in ['upload', 'authenticated']:
+                        type_idx = i
+                    elif p.startswith('v') and p[1:].isdigit():
+                        version_idx = i
+                        break
+                        
+                if type_idx >= 0 and version_idx > type_idx:
+                    public_id_with_ext = '/'.join(parts[version_idx+1:])
+                    version_str = parts[version_idx][1:] # e.g. '1783280115' from 'v1783280115'
+                    
+                    resource_type = 'raw'
+                    if '/image/' in file_url: resource_type = 'image'
+                    elif '/video/' in file_url: resource_type = 'video'
+                    
+                    import cloudinary.utils
+                    
+                    fmt = ''
+                    public_id = public_id_with_ext
+                    if '.' in public_id_with_ext and resource_type != 'raw':
+                        fmt = public_id_with_ext.rsplit('.', 1)[-1]
+                        public_id = public_id_with_ext.rsplit('.', 1)[0]
+
+                    # Generate a signed CDN URL
+                    kwargs = {
+                        "resource_type": resource_type,
+                        "type": "authenticated",
+                        "version": version_str,
+                        "sign_url": True,
+                        "secure": True
+                    }
+                    if fmt:
+                        kwargs["format"] = fmt
+
+                    fresh_url = cloudinary.utils.private_download_url(
+                        public_id,
+                        fmt,
+                        **kwargs
+                    )
+                    return fresh_url
+            except Exception as e:
+                logger.error(f"Error generating Cloudinary signed URL: {e}")
+        return file_url
+            
     def download_file(self, file_url: str, local_path: str) -> bool:
         """Download a file from cloud storage using its URL securely via the provider client"""
         if not self.is_available() or not file_url:
@@ -466,12 +537,56 @@ class CloudStorageService:
             
             elif self.config.provider == 'cloudinary':
                 import requests
+                
+                # Cloudinary's secure_url from upload response often has invalid signatures for authenticated raw files.
+                # Regenerate the signed URL if it's an authenticated resource.
+                if '/authenticated/' in file_url:
+                    parts = file_url.split('/authenticated/')
+                    if len(parts) > 1:
+                        sub_parts = parts[1].split('/')
+                        start_idx = 0
+                        if sub_parts[start_idx].startswith('s--'):
+                            start_idx += 1
+                        if start_idx < len(sub_parts) and sub_parts[start_idx].startswith('v') and sub_parts[start_idx][1:].isdigit():
+                            start_idx += 1
+                            
+                        public_id_with_ext = '/'.join(sub_parts[start_idx:])
+                        
+                        resource_type = 'raw'
+                        if '/image/' in file_url: resource_type = 'image'
+                        elif '/video/' in file_url: resource_type = 'video'
+                        
+                        import cloudinary.utils
+                        
+                        # Handle the case where public_id has an extension
+                        fmt = ''
+                        public_id = public_id_with_ext
+                        if '.' in public_id_with_ext and resource_type != 'raw':
+                            fmt = public_id_with_ext.rsplit('.', 1)[-1]
+                            public_id = public_id_with_ext.rsplit('.', 1)[0]
+                            
+                        # Use private_download_url which works for blocked file types like authenticated PDFs
+                        kwargs = {
+                            "resource_type": resource_type,
+                            "type": "authenticated",
+                            "attachment": True
+                        }
+                            
+                        fresh_url = cloudinary.utils.private_download_url(
+                            public_id,
+                            fmt,
+                            **kwargs
+                        )
+                        file_url = fresh_url
+
                 response = requests.get(file_url, stream=True)
                 if response.status_code == 200:
                     with open(local_path, 'wb') as f:
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
                     return True
+                else:
+                    logger.error(f"Cloudinary download failed with {response.status_code} for URL: {file_url}")
                 return False
                 
         except Exception as e:
@@ -584,38 +699,96 @@ class CloudStorageService:
         }
     
     def generate_presigned_url(self, file_name: str, file_type: str, user_id: str, content_type: str = None) -> Optional[dict]:
-        """Generate a presigned URL for direct S3 upload from the frontend"""
-        if not self.is_available() or self.config.provider != 's3':
-            logger.warning("Cloud storage not available or not using S3")
+        """Generate a presigned URL for direct cloud upload from the frontend"""
+        if not self.is_available():
+            logger.warning("Cloud storage not available")
             return None
             
         user_hex = self._get_user_hex(user_id)
         # The user requested folder structure: user or business/file_type/file
         # We will use: user_hex/file_type/filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        import re
+        file_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file_name)
         unique_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}_{file_name}"
         folder_path = f"{user_hex}/{file_type}/{unique_filename}"
         bucket_name = self.get_bucket_name()
         
         try:
-            params = {
-                'Bucket': bucket_name,
-                'Key': folder_path
-            }
-            if content_type:
-                params['ContentType'] = content_type
+            if self.config.provider == 's3':
+                params = {
+                    'Bucket': bucket_name,
+                    'Key': folder_path
+                }
+                if content_type:
+                    params['ContentType'] = content_type
+                    
+                url = self.client.generate_presigned_url(
+                    'put_object',
+                    Params=params,
+                    ExpiresIn=3600
+                )
+                return {
+                    "provider": "s3",
+                    "upload_method": "PUT",
+                    "fields": {},
+                    "upload_url": url,
+                    "s3_key": folder_path,
+                    "bucket": bucket_name,
+                    "file_url": f"https://{bucket_name}.s3.{self.config.region}.amazonaws.com/{folder_path}"
+                }
+            elif self.config.provider == 'cloudinary':
+                import time
+                import cloudinary.utils
+                from decouple import config
                 
-            url = self.client.generate_presigned_url(
-                'put_object',
-                Params=params,
-                ExpiresIn=3600
-            )
-            return {
-                "upload_url": url,
-                "s3_key": folder_path,
-                "bucket": bucket_name,
-                "file_url": f"https://{bucket_name}.s3.{self.config.region}.amazonaws.com/{folder_path}"
-            }
+                unix_timestamp = int(time.time())
+                public_id = folder_path
+                if '.' in public_id.split('/')[-1]:
+                    public_id = public_id.rsplit('.', 1)[0]
+                    
+                params_to_sign = {
+                    "timestamp": unix_timestamp,
+                    "public_id": public_id,
+                    "type": "authenticated"
+                }
+                
+                api_secret = config('CLOUDINARY_API_SECRET', default='')
+                api_key = config('CLOUDINARY_API_KEY', default='')
+                cloud_name = config('CLOUDINARY_CLOUD_NAME', default='')
+                
+                signature = cloudinary.utils.api_sign_request(params_to_sign, api_secret)
+                
+                ext = file_name.rsplit('.', 1)[-1] if '.' in file_name else ''
+                cloudinary.config(cloud_name=cloud_name, api_key=api_key, api_secret=api_secret)
+                signed_delivery_url, _ = cloudinary.utils.cloudinary_url(
+                    public_id,
+                    resource_type="raw",
+                    type="authenticated",
+                    sign_url=True,
+                    format=ext
+                )
+                if signed_delivery_url.startswith('http://'):
+                    signed_delivery_url = signed_delivery_url.replace('http://', 'https://', 1)
+                
+                return {
+                    "provider": "cloudinary",
+                    "upload_method": "POST",
+                    "upload_url": f"https://api.cloudinary.com/v1_1/{cloud_name}/raw/upload",
+                    "fields": {
+                        "api_key": api_key,
+                        "timestamp": unix_timestamp,
+                        "signature": signature,
+                        "public_id": public_id,
+                        "type": "authenticated"
+                    },
+                    "s3_key": folder_path,
+                    "bucket": cloud_name,
+                    "file_url": signed_delivery_url
+                }
+            else:
+                logger.warning(f"Unsupported provider for presigned URL: {self.config.provider}")
+                return None
         except Exception as e:
             logger.error(f"Failed to generate presigned URL: {e}")
             return None

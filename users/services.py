@@ -119,7 +119,7 @@ class EmailService:
                 recipient=user.email,
                 subject=subject,
                 body_text=plain_message,
-                html_message=html_message,
+                body_html=html_message,
                 enqueue=True
             )
             return True

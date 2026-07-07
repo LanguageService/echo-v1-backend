@@ -40,6 +40,13 @@ class TextTranslationSerializer(serializers.ModelSerializer):
         if instance.mode == 'SHORT':
             ret.pop('original_file_url', None)
             ret.pop('translated_file_url', None)
+        else:
+            from translation.cloud_storage import CloudStorageService
+            storage = CloudStorageService()
+            if ret.get('original_file_url'):
+                ret['original_file_url'] = storage.private_download_url(ret['original_file_url']) or ret['original_file_url']
+            if ret.get('translated_file_url'):
+                ret['translated_file_url'] = storage.private_download_url(ret['translated_file_url']) or ret['translated_file_url']
         return ret
 
 class SpeechTranslationSerializer(serializers.ModelSerializer):
@@ -68,6 +75,13 @@ class SpeechTranslationSerializer(serializers.ModelSerializer):
             except ValueError:
                 pass
                 
+        from translation.cloud_storage import CloudStorageService
+        storage = CloudStorageService()
+        if ret.get('original_audio_url'):
+            ret['original_audio_url'] = storage.private_download_url(ret['original_audio_url']) or ret['original_audio_url']
+        if ret.get('translated_audio_url'):
+            ret['translated_audio_url'] = storage.private_download_url(ret['translated_audio_url']) or ret['translated_audio_url']
+
         # The user wants original_text and translated_text to be present 
         # for STT and TTS regardless of mode.
         return ret

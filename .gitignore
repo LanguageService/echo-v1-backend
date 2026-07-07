@@ -92,3 +92,6 @@ Thumbs.db
 .snapshots/
 ebook-test/
 bin/
+custom_models/
+test.txt
+uv.lock

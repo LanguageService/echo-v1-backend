@@ -22,7 +22,7 @@ def _send_email(
     email = EmailMultiAlternatives(
         subject=subject,
         body=f"{body_text}\n",
-        from_email=settings.EMAIL_FROM,
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@letecho.com"),
         to=[recipient],
         alternatives=[(body_html, "text/html")],
         attachments=attachments,

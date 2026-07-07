@@ -41,7 +41,7 @@ class GeneralTranslationHistoryAPIView(APIView):
             from itertools import chain
             
             # Build querysets for authenticated user across all translation types
-            text_qs = TextTranslation.objects.filter(user=request.user)
+            text_qs = TextTranslation.objects.filter(user=request.user).exclude(mode='LARGE')
             speech_qs = SpeechTranslation.objects.filter(user=request.user)
             image_qs = ImageTranslation.objects.filter(user=request.user)
             
