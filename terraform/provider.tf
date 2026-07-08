@@ -9,7 +9,7 @@ terraform {
 
 provider "aws" {
   region  = var.aws_region
-  profile = "echo"
+  profile = "letusecho"
   default_tags {
     tags = {
       Project     = var.project_name

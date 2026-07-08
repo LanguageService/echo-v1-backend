@@ -12,7 +12,7 @@ resource "aws_security_group" "rds_sg" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
+    security_groups = [aws_security_group.ec2_sg.id]
   }
 
   egress {
@@ -27,7 +27,7 @@ resource "aws_db_instance" "postgres" {
   identifier           = "${var.project_name}-${var.environment}-db"
   allocated_storage    = 20
   engine               = "postgres"
-  engine_version       = "15.4"
+  engine_version       = "15"
   instance_class       = "db.t4g.micro"
   db_name              = "letecho_db"
   username             = var.db_username

@@ -9,43 +9,74 @@ class DocxProcessor:
     """Processor for DOCX files"""
     
     @staticmethod
+    def _build_tagged_text(runs) -> Tuple[str, bool]:
+        """Convert a list of runs into a tagged string, e.g. <r id="0">Hello</r>"""
+        text = ""
+        has_text = False
+        for i, run in enumerate(runs):
+            if run.text:
+                text += f'<r id="{i}">{html.escape(run.text)}</r>'
+                if run.text.strip():
+                    has_text = True
+        return text, has_text
+
+    @staticmethod
+    def _parse_tagged_text(tagged_text: str, runs) -> None:
+        """Parse the translated tagged string and assign text back to original runs"""
+        import re
+        
+        for run in runs:
+            if run.text:
+                run.text = ""
+                
+        pattern = re.compile(r'<r\s+id=["\']?(\d+)["\']?>(.*?)</r>', re.DOTALL)
+        matches = pattern.findall(tagged_text)
+        
+        if not matches and tagged_text.strip():
+            clean_text = re.sub(r'<[^>]+>', '', tagged_text)
+            clean_text = html.unescape(clean_text)
+            if runs:
+                runs[0].text = clean_text
+            return
+
+        for run_id_str, content in matches:
+            try:
+                run_id = int(run_id_str)
+                if 0 <= run_id < len(runs):
+                    runs[run_id].text = html.unescape(content)
+            except ValueError:
+                continue
+
+    @staticmethod
     def extract_text(file_path: str) -> List[Dict[str, Any]]:
-        """
-        Extract text from DOCX while keeping track of paragraph and run indices.
-        Assigns a virtual 'page' number (every BATCH_SIZE blocks = one page) so
-        _translate_blocks can parallelise DOCX documents the same way it does PDFs.
-        """
-        BATCH_SIZE = 15  # blocks per virtual page
+        BATCH_SIZE = 15
         doc = Document(file_path)
         blocks = []
 
         for p_idx, para in enumerate(doc.paragraphs):
-            for r_idx, run in enumerate(para.runs):
-                if run.text.strip():
-                    blocks.append({
-                        'text': run.text,
-                        'p_idx': p_idx,
-                        'r_idx': r_idx,
-                        'type': 'paragraph'
-                    })
+            tagged_text, has_text = DocxProcessor._build_tagged_text(para.runs)
+            if has_text:
+                blocks.append({
+                    'text': tagged_text,
+                    'p_idx': p_idx,
+                    'type': 'paragraph'
+                })
 
         for t_idx, table in enumerate(doc.tables):
             for r_idx, row in enumerate(table.rows):
                 for c_idx, cell in enumerate(row.cells):
                     for p_idx, para in enumerate(cell.paragraphs):
-                        for run_idx, run in enumerate(para.runs):
-                            if run.text.strip():
-                                blocks.append({
-                                    'text': run.text,
-                                    't_idx': t_idx,
-                                    'row_idx': r_idx,
-                                    'cell_idx': c_idx,
-                                    'p_idx': p_idx,
-                                    'r_idx': run_idx,
-                                    'type': 'table'
-                                })
+                        tagged_text, has_text = DocxProcessor._build_tagged_text(para.runs)
+                        if has_text:
+                            blocks.append({
+                                'text': tagged_text,
+                                't_idx': t_idx,
+                                'row_idx': r_idx,
+                                'cell_idx': c_idx,
+                                'p_idx': p_idx,
+                                'type': 'table'
+                            })
 
-        # Assign virtual page numbers so _translate_blocks can parallelise
         for i, block in enumerate(blocks):
             block['page'] = i // BATCH_SIZE
 
@@ -53,22 +84,17 @@ class DocxProcessor:
 
     @staticmethod
     def replace_text(file_path: str, translated_blocks: List[Dict[str, Any]], output_path: str):
-        """
-        Replace text in DOCX with translated versions
-        """
         doc = Document(file_path)
         
         for block in translated_blocks:
             if block['type'] == 'paragraph':
                 para = doc.paragraphs[block['p_idx']]
-                run = para.runs[block['r_idx']]
-                run.text = block['translated_text']
+                DocxProcessor._parse_tagged_text(block.get('translated_text', ''), para.runs)
             elif block['type'] == 'table':
                 table = doc.tables[block['t_idx']]
                 cell = table.rows[block['row_idx']].cells[block['cell_idx']]
                 para = cell.paragraphs[block['p_idx']]
-                run = para.runs[block['r_idx']]
-                run.text = block['translated_text']
+                DocxProcessor._parse_tagged_text(block.get('translated_text', ''), para.runs)
         
         doc.save(output_path)
 
@@ -136,9 +162,17 @@ class PdfProcessor:
                 rect.y1 += 10
 
                 css_color = f"rgb({int(color_tuple[0]*255)}, {int(color_tuple[1]*255)}, {int(color_tuple[2]*255)})"
-                escaped_text = html.escape(block['translated_text'])
+                escaped_text = html.escape(block.get('translated_text', ''))
+                
+                font_name = block.get('font', 'sans-serif')
+                font_weight = "bold" if "bold" in font_name.lower() else "normal"
+                font_style = "italic" if "italic" in font_name.lower() else "normal"
+                
+                # Try to clean up font name (e.g., 'TimesNewRomanPSMT' -> 'Times New Roman')
+                clean_font = font_name.replace("PSMT", "").replace("MT", "").split("-")[0]
+                
                 html_content = f"""
-                <div style="font-family: sans-serif; font-size: {block['size']}pt; color: {css_color}; line-height: 1.2;">
+                <div style="font-family: '{clean_font}', '{font_name}', sans-serif; font-weight: {font_weight}; font-style: {font_style}; font-size: {block['size']}pt; color: {css_color}; line-height: 1.2;">
                     {escaped_text}
                 </div>
                 """

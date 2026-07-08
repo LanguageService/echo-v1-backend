@@ -26,40 +26,26 @@ variable "db_username" {
   description = "PostgreSQL admin username"
   type        = string
   sensitive   = true
+  default = "echouser"
 }
 
 variable "db_password" {
   description = "PostgreSQL admin password"
   type        = string
   sensitive   = true
+  default = "letThemECHO2026"
 }
 
-variable "django_secret_key" {
-  description = "Django secret key"
+
+
+variable "ec2_instance_type" {
+  description = "The instance type for the EC2 server"
   type        = string
-  sensitive   = true
+  default     = "t3.medium"
 }
 
-variable "gemini_api_key" {
-  description = "API key for Gemini models"
+variable "ec2_key_name" {
+  description = "The name of the SSH key pair to use for EC2 access"
   type        = string
-  sensitive   = true
-}
-
-variable "stripe_secret_key" {
-  description = "Stripe secret key"
-  type        = string
-  sensitive   = true
-}
-
-variable "backend_image_tag" {
-  description = "Docker image tag for the backend API"
-  type        = string
-  default     = "latest"
-}
-
-variable "celery_image_tag" {
-  description = "Docker image tag for the celery worker"
-  type        = string
-  default     = "latest"
+  default     = "letecho-key"
 }

@@ -1,0 +1,42 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Execute remote ssh commands to deploy
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # Go to project directory
+          cd /home/ubuntu/echo-v1-backend
+          
+          # Pull the latest changes
+          git pull origin main
+          
+          # Build and start the containers
+          docker-compose -f docker-compose.prod.yml build
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # Run database migrations
+          docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput
+          
+          # Collect static files
+          docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput
+          
+          # Clean up old docker images to save space
+          docker system prune -af
