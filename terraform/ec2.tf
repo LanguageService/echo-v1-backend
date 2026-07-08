@@ -102,6 +102,11 @@ resource "aws_eip" "app_server_eip" {
 }
 
 output "ec2_public_ip" {
-  description = "Public IP of the EC2 instance"
-  value       = aws_eip.app_server_eip.public_ip
+  description = "Public IP address of the EC2 instance"
+  value       = aws_instance.app_server.public_ip
+}
+
+output "ec2_instance_id" {
+  description = "The ID of the EC2 instance (for SSM)"
+  value       = aws_instance.app_server.id
 }

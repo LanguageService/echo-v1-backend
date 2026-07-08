@@ -15,28 +15,28 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Execute remote ssh commands to deploy
-      uses: appleboy/ssh-action@master
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
       with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          # Go to project directory
-          cd /home/ubuntu/echo-v1-backend
-          
-          # Pull the latest changes
-          git pull origin main
-          
-          # Build and start the containers
-          docker-compose -f docker-compose.prod.yml build
-          docker-compose -f docker-compose.prod.yml up -d
-          
-          # Run database migrations
-          docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput
-          
-          # Collect static files
-          docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput
-          
-          # Clean up old docker images to save space
-          docker system prune -af
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Deploy via AWS Systems Manager
+      run: |
+        COMMAND_ID=$(aws ssm send-command \
+          --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+          --document-name "AWS-RunShellScript" \
+          --parameters 'commands=["cd /home/ubuntu/echo-v1-backend","sudo -u ubuntu git pull origin main","docker-compose -f docker-compose.prod.yml build","docker-compose -f docker-compose.prod.yml up -d","docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput","docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput","docker system prune -af"]' \
+          --query "Command.CommandId" --output text)
+        
+        echo "Waiting for command $COMMAND_ID to complete on EC2..."
+        aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+        
+        STATUS=$(aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[0].Status" --output text)
+        if [ "$STATUS" != "Success" ]; then
+          echo "Deployment failed with status $STATUS"
+          aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[0].CommandPlugins[0].Output" --output text
+          exit 1
+        fi
+        echo "Deployment Successful!"
