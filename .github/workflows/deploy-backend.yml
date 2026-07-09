@@ -37,12 +37,16 @@ jobs:
           --query "Command.CommandId" --output text)
         
         echo "Waiting for command $COMMAND_ID to complete on EC2..."
-        aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
-        
-        STATUS=$(aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[0].Status" --output text)
-        if [ "$STATUS" != "Success" ]; then
-          echo "Deployment failed with status $STATUS"
-          aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[0].CommandPlugins[0].Output" --output text
-          exit 1
-        fi
-        echo "Deployment Successful!"
+        while true; do
+          STATUS=$(aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[0].Status" --output text)
+          if [ "$STATUS" == "Success" ]; then
+            echo "Deployment Successful!"
+            break
+          elif [ "$STATUS" == "Failed" ] || [ "$STATUS" == "Cancelled" ] || [ "$STATUS" == "TimedOut" ]; then
+            echo "Deployment failed with status $STATUS"
+            aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --query "CommandInvocations[0].CommandPlugins[0].Output" --output text
+            exit 1
+          fi
+          echo "Still waiting... Current status: $STATUS"
+          sleep 10
+        done
