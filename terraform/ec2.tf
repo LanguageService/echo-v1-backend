@@ -59,7 +59,6 @@ resource "aws_security_group" "ec2_sg" {
 resource "aws_instance" "app_server" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.ec2_instance_type
-  key_name      = var.ec2_key_name
   subnet_id            = module.vpc.public_subnets[0]
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
   iam_instance_profile = aws_iam_instance_profile.ec2_app_profile.name

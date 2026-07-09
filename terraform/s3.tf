@@ -1,9 +1,9 @@
 resource "aws_s3_bucket" "backend_media" {
-  bucket        = "${var.project_name}-${var.environment}-media"
+  bucket        = "${var.project_name}-${var.environment}-media-${var.aws_region}"
   force_destroy = true # Be careful with this in production!
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-media"
+    Name        = "${var.project_name}-${var.environment}-media-${var.aws_region}"
     Environment = var.environment
   }
 }
