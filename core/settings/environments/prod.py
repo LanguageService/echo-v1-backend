@@ -2,7 +2,7 @@ from decouple import config
 
 
 DEBUG = False
-ALLOWED_HOSTS = ["https://api.smartscribbl.com","https://app.smartscribbl.com","http://localhost:4200","api.smartscribbl.com"]
+ALLOWED_HOSTS = ["52.212.205.193", "*"]
 
 
 DATABASES = {
