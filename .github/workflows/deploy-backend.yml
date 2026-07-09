@@ -22,12 +22,18 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: eu-west-1
 
+    - name: Package code
+      run: zip -r backend.zip . -x "*.git*"
+
+    - name: Upload to S3
+      run: aws s3 cp backend.zip s3://letecho-prod-media-eu-west-1/deploy/backend.zip
+
     - name: Deploy via AWS Systems Manager
       run: |
         COMMAND_ID=$(aws ssm send-command \
           --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
           --document-name "AWS-RunShellScript" \
-          --parameters 'commands=["cd /home/ubuntu/echo-v1-backend","sudo -u ubuntu git pull origin main","docker-compose -f docker-compose.prod.yml build","docker-compose -f docker-compose.prod.yml up -d","docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput","docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput","docker system prune -af"]' \
+          --parameters 'commands=["set -e","sudo apt-get update && sudo apt-get install -y unzip","mkdir -p /home/ubuntu/echo-v1-backend","cd /home/ubuntu/echo-v1-backend","aws s3 cp s3://letecho-prod-media-eu-west-1/deploy/backend.zip .","unzip -o backend.zip","docker-compose -f docker-compose.prod.yml build","docker-compose -f docker-compose.prod.yml up -d","docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput","docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput","docker system prune -af"]' \
           --query "Command.CommandId" --output text)
         
         echo "Waiting for command $COMMAND_ID to complete on EC2..."
