@@ -68,20 +68,51 @@ resource "aws_instance" "app_server" {
     volume_type = "gp3"
   }
 
-  # User data to install docker and docker-compose
+  # User data to install docker, docker-compose, nginx, and certbot
   user_data = <<-EOF
               #!/bin/bash
               apt-get update -y
-              apt-get install -y ca-certificates curl gnupg lsb-release
+              apt-get install -y ca-certificates curl gnupg lsb-release nginx python3-certbot-nginx
+              
               mkdir -p /etc/apt/keyrings
               curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
               echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
               apt-get update -y
               apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
               usermod -aG docker ubuntu
+              
               # Also install docker-compose the standalone way just in case
               curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
               chmod +x /usr/local/bin/docker-compose
+
+              # Configure Nginx for proxying to Docker app
+              cat << 'NGINX_EOF' > /etc/nginx/sites-available/app
+              server {
+                  listen 80;
+                  server_name api.letusecho.com;
+
+                  location / {
+                      proxy_pass http://127.0.0.1:8000;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+              }
+              NGINX_EOF
+
+              ln -sf /etc/nginx/sites-available/app /etc/nginx/sites-enabled/app
+              rm -f /etc/nginx/sites-enabled/default
+              systemctl restart nginx
+
+              # Create setup script for Let's Encrypt
+              cat << 'SCRIPT_EOF' > /usr/local/bin/setup-https.sh
+              #!/bin/bash
+              echo "Starting Certbot to request SSL certificate..."
+              certbot --nginx -d api.letusecho.com --non-interactive --agree-tos -m sunday@letusecho.com
+              SCRIPT_EOF
+              
+              chmod +x /usr/local/bin/setup-https.sh
               EOF
 
   tags = {
