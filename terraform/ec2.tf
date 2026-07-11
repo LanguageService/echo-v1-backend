@@ -89,7 +89,7 @@ resource "aws_instance" "app_server" {
               cat << 'NGINX_EOF' > /etc/nginx/sites-available/app
               server {
                   listen 80;
-                  server_name api.letusecho.com;
+                  server_name backend.letusecho.com;
 
                   location / {
                       proxy_pass http://127.0.0.1:8000;
@@ -109,7 +109,7 @@ resource "aws_instance" "app_server" {
               cat << 'SCRIPT_EOF' > /usr/local/bin/setup-https.sh
               #!/bin/bash
               echo "Starting Certbot to request SSL certificate..."
-              certbot --nginx -d api.letusecho.com --non-interactive --agree-tos -m sunday@letusecho.com
+              certbot --nginx -d backend.letusecho.com --non-interactive --agree-tos -m sunday@letusecho.com
               SCRIPT_EOF
               
               chmod +x /usr/local/bin/setup-https.sh

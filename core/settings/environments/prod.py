@@ -2,7 +2,7 @@ from decouple import config
 
 
 DEBUG = False
-ALLOWED_HOSTS = ["api.letusecho.com", "52.212.205.193"]
+ALLOWED_HOSTS = ["backend.letusecho.com", "52.212.205.193"]
 
 
 DATABASES = {
