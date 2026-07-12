@@ -48,14 +48,22 @@ class CloudStorageService:
             
             if env_mode == "prod":
                 cfg = CloudStorageConfig.objects.filter(provider="s3").first()
+                
+                env_bucket = config("S3_BUCKET_NAME", default=None) or config("AWS_STORAGE_BUCKET_NAME", default=None)
+                env_region = config("AWS_REGION", default=None)
+                
                 if not cfg:
                     cfg = CloudStorageConfig(
                         name="Amazon S3 (Auto)",
                         provider="s3",
-                        bucket_name=config("S3_BUCKET_NAME", default="echo-translation-bucket"),
-                        region=config("AWS_REGION", default="us-east-1"),
+                        bucket_name=env_bucket or "echo-translation-bucket",
+                        region=env_region or "us-east-1",
                         credentials_env_prefix="AWS"
                     )
+                else:
+                    if env_bucket: cfg.bucket_name = env_bucket
+                    if env_region: cfg.region = env_region
+                    
                 return cfg
             else:
                 cfg = CloudStorageConfig.objects.filter(provider="cloudinary").first()
@@ -123,6 +131,9 @@ class CloudStorageService:
                     boto_kwargs['aws_access_key_id'] = access_key
                     boto_kwargs['aws_secret_access_key'] = secret_key
                     
+                from botocore.config import Config
+                boto_kwargs['config'] = Config(signature_version='s3v4')
+                
                 self.client = boto3.client('s3', **boto_kwargs)
                 
             elif self.config.provider == 'gcs':
@@ -358,7 +369,7 @@ class CloudStorageService:
                     folder_path,
                     ExtraArgs=extra_args
                 )
-                return f"https://{bucket_name}.s3.{self.config.region}.amazonaws.com/{folder_path}"
+                return f"https://{bucket_name}.s3-{self.config.region}.amazonaws.com/{folder_path}"
                 
             elif self.config.provider == 'gcs':
                 bucket = self.client.bucket(bucket_name)
@@ -398,7 +409,7 @@ class CloudStorageService:
                     Body=file_content,
                     ContentType=content_type
                 )
-                return f"https://{bucket_name}.s3.{self.config.region}.amazonaws.com/{folder_path}"
+                return f"https://{bucket_name}.s3-{self.config.region}.amazonaws.com/{folder_path}"
                 
             elif self.config.provider == 'gcs':
                 bucket = self.client.bucket(bucket_name)
@@ -738,7 +749,7 @@ class CloudStorageService:
                     "upload_url": url,
                     "s3_key": folder_path,
                     "bucket": bucket_name,
-                    "file_url": f"https://{bucket_name}.s3.{self.config.region}.amazonaws.com/{folder_path}"
+                    "file_url": f"https://{bucket_name}.s3-{self.config.region}.amazonaws.com/{folder_path}"
                 }
             elif self.config.provider == 'cloudinary':
                 import time
