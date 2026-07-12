@@ -111,16 +111,19 @@ class CloudStorageService:
                 )
                 
                 if not access_key or not secret_key:
-                    logger.error(f"Missing S3 credentials. Expected: {prefix}_ACCESS_KEY / AWS_ACCESS_KEY_ID")
-                    return
+                    logger.info(f"No explicit S3 credentials found. Relying on IAM roles or default boto3 credential chain.")
                 
-                self.client = boto3.client(
-                    's3',
-                    aws_access_key_id=access_key,
-                    aws_secret_access_key=secret_key,
-                    region_name=self.config.region,
-                    endpoint_url=self.config.endpoint_url if self.config.endpoint_url else None
-                )
+                boto_kwargs = {
+                    'region_name': self.config.region,
+                }
+                if self.config.endpoint_url:
+                    boto_kwargs['endpoint_url'] = self.config.endpoint_url
+                    
+                if access_key and secret_key:
+                    boto_kwargs['aws_access_key_id'] = access_key
+                    boto_kwargs['aws_secret_access_key'] = secret_key
+                    
+                self.client = boto3.client('s3', **boto_kwargs)
                 
             elif self.config.provider == 'gcs':
                 from google.cloud import storage
