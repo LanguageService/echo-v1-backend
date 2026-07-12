@@ -327,6 +327,7 @@ CORS_ALLOWED_ORIGINS = [
    "https://letusechoo.vercel.app",
    "https://letusecho.com",
    "https://www.letusecho.com",
+   "https://d35xtml6csqrpa.cloudfront.net"
 ]
 
 # Django Spectacular settings
