@@ -455,6 +455,21 @@ class CloudStorageService:
         if not self.config or not file_url:
             return file_url
             
+        if self.config.provider == 's3' and '.amazonaws.com' in file_url:
+            try:
+                bucket_name = self.get_bucket_name()
+                path_start = file_url.find(".amazonaws.com/")
+                if path_start != -1:
+                    file_path = file_url[path_start + len(".amazonaws.com/"):]
+                    presigned_url = self.client.generate_presigned_url(
+                        'get_object',
+                        Params={'Bucket': bucket_name, 'Key': file_path},
+                        ExpiresIn=3600
+                    )
+                    return presigned_url
+            except Exception as e:
+                logger.error(f"Error generating S3 signed URL: {e}")
+            
         if self.config.provider == 'cloudinary' and 'cloudinary.com' in file_url:
             # We always want to sign URLs, even if they were uploaded as 'upload' but migrated, 
             # or if they are PDFs which are blocked by default.
