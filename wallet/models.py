@@ -64,3 +64,22 @@ class Transaction(models.Model):
     def __str__(self):
         tag = " [ADMIN]" if self.initiated_by_admin else ""
         return f"{self.wallet.user.email} — {self.type} {self.amount}{tag}"
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+import logging
+
+logger = logging.getLogger(__name__)
+
+@receiver(post_save, sender=User)
+def issue_signup_credits(sender, instance, created, **kwargs):
+    """
+    Issue 100 credits to a new user upon signup.
+    """
+    if created:
+        try:
+            wallet = Wallet.fetch_for_user(instance)
+            wallet.topup(amount=100, notes="Signup bonus")
+            logger.info(f"Issued 100 signup credits to user {instance.email}")
+        except Exception as e:
+            logger.error(f"Failed to issue signup credits for user {instance.email}: {e}")
