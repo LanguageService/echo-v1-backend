@@ -296,6 +296,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://letusecho.com",
     "https://www.letusecho.com",
     "https://*.letusecho.com",
+    "https://d35xtml6csqrpa.cloudfront.net",
     
 ]
 
