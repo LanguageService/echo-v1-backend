@@ -42,7 +42,8 @@ def async_voice_translation_task(self, translation_id: str) -> Dict[str, Any]:
         
         if result.get('success') and translation_record.user and translation_record.user.email:
             from users.services import EmailService
-            download_url = result.get('translated_audio_url') or "Login to your dashboard to view"
+            from django.conf import settings
+            download_url = f"{settings.FRONTEND_URL}/dashboard/history"
             EmailService.send_translation_ready_email(
                 user=translation_record.user,
                 document_title=translation_record.title or f"Audio Translation ({translation_record.target_language})",
@@ -84,7 +85,8 @@ def async_ebook_translation_task(self, translation_id: str, local_file_path: str
             translation_record = TextTranslation.objects.get(id=translation_id)
             if translation_record.user and translation_record.user.email:
                 from users.services import EmailService
-                download_url = translation_record.translated_file_url or "Login to your dashboard to view"
+                from django.conf import settings
+                download_url = f"{settings.FRONTEND_URL}/dashboard/history"
                 EmailService.send_translation_ready_email(
                     user=translation_record.user,
                     document_title=translation_record.title or f"Document Translation ({translation_record.target_language})",
