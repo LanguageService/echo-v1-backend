@@ -510,8 +510,6 @@ class CloudStorageService:
                         "sign_url": True,
                         "secure": True
                     }
-                    if fmt:
-                        kwargs["format"] = fmt
 
                     fresh_url = cloudinary.utils.private_download_url(
                         public_id,
