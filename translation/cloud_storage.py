@@ -452,16 +452,29 @@ class CloudStorageService:
             self.config = self._get_active_config()
             self._initialize_client()
             
-        if not self.config or not file_url:
+        if not file_url:
             return file_url
             
-        if self.config.provider == 's3' and '.amazonaws.com' in file_url:
+        if '.amazonaws.com' in file_url:
             try:
-                bucket_name = self.get_bucket_name()
+                if self.config and self.config.provider == 's3' and self.client:
+                    s3_client = self.client
+                    bucket_name = self.get_bucket_name()
+                else:
+                    import boto3
+                    from decouple import config
+                    s3_cfg = CloudStorageConfig.objects.filter(provider='s3').first()
+                    region = s3_cfg.region if s3_cfg else (config('AWS_REGION', default='eu-west-1'))
+                    s3_client = boto3.client('s3', region_name=region)
+                    if s3_cfg and s3_cfg.bucket_name:
+                        bucket_name = s3_cfg.bucket_name
+                    else:
+                        bucket_name = config('S3_BUCKET_NAME', default=None) or config('AWS_STORAGE_BUCKET_NAME', default='letecho-prod-media-eu-west-1')
+
                 path_start = file_url.find(".amazonaws.com/")
                 if path_start != -1:
                     file_path = file_url[path_start + len(".amazonaws.com/"):]
-                    presigned_url = self.client.generate_presigned_url(
+                    presigned_url = s3_client.generate_presigned_url(
                         'get_object',
                         Params={'Bucket': bucket_name, 'Key': file_path},
                         ExpiresIn=3600
@@ -470,7 +483,7 @@ class CloudStorageService:
             except Exception as e:
                 logger.error(f"Error generating S3 signed URL: {e}")
             
-        if self.config.provider == 'cloudinary' and 'cloudinary.com' in file_url:
+        if 'cloudinary.com' in file_url:
             # We always want to sign URLs, even if they were uploaded as 'upload' but migrated, 
             # or if they are PDFs which are blocked by default.
             try:
