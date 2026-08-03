@@ -319,7 +319,7 @@ class TranslationOrchestrator:
             translation_record.translated_text = trans_result['translated_text']
             
             # 3. TTS - Synthesize (If mode is SHORT or explicitly requested via STS)
-            if mode == 'SHORT' or translation_record.speech_service == SpeechServiceType.STS:
+            if mode == 'SHORT' or translation_record.speech_service == 'STS':
                 tts_result = self.tts.synthesize(translation_record.translated_text, target_lang)
                 self._log_usage(user, tts_result, 'TTS', translation_record)
                 
