@@ -40,7 +40,7 @@ def async_voice_translation_task(self, translation_id: str) -> Dict[str, Any]:
             translation_id=translation_id
         )
         
-        if result.get('success') and translation_record.user and translation_record.user.email:
+        if result.get('success') and translation_record.user and translation_record.user.email and translation_record.mode == 'LARGE':
             from users.services import EmailService
             from django.conf import settings
             download_url = f"{settings.FRONTEND_URL}/dashboard/history"
@@ -83,7 +83,7 @@ def async_ebook_translation_task(self, translation_id: str, local_file_path: str
         if result['success']:
             # Send completion email
             translation_record = TextTranslation.objects.get(id=translation_id)
-            if translation_record.user and translation_record.user.email:
+            if translation_record.user and translation_record.user.email and translation_record.mode == 'LARGE':
                 from users.services import EmailService
                 from django.conf import settings
                 download_url = f"{settings.FRONTEND_URL}/dashboard/history"
