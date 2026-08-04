@@ -74,12 +74,12 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=User)
 def issue_signup_credits(sender, instance, created, **kwargs):
     """
-    Issue 100 credits to a new user upon signup.
+    Issue 30 credits to a new user upon signup.
     """
     if created:
         try:
             wallet = Wallet.fetch_for_user(instance)
-            wallet.topup(amount=100, notes="Signup bonus")
-            logger.info(f"Issued 100 signup credits to user {instance.email}")
+            wallet.topup(amount=30, notes="Signup bonus")
+            logger.info(f"Issued 30 signup credits to user {instance.email}")
         except Exception as e:
             logger.error(f"Failed to issue signup credits for user {instance.email}: {e}")
