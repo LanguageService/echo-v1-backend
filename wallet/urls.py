@@ -7,6 +7,7 @@ from . import views
 router = DefaultRouter()
 
 router.register("transactions", views.TransactionViewSet)
+router.register("global-config", views.GlobalConfigViewSet, basename="global-config")
 router.register("", views.WalletViewSet)
 
 urlpatterns = [

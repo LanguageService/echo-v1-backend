@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .models import Wallet, Transaction
+from .models import Wallet, Transaction, GlobalConfig
 
 
 class WalletTopUpForm(forms.Form):
@@ -133,3 +133,8 @@ class TransactionAdmin(admin.ModelAdmin):
         if obj.created_by:
             return obj.created_by.email
         return '—'
+
+
+@admin.register(GlobalConfig)
+class GlobalConfigAdmin(admin.ModelAdmin):
+    list_display = ('id', 'free_credit')
