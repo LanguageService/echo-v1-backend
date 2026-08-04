@@ -8,6 +8,24 @@ from . import choices
 User = get_user_model()
 
 
+class GlobalConfig(models.Model):
+    free_credit = models.IntegerField(default=30, help_text="Initial free credits for new users")
+
+    class Meta:
+        verbose_name = "Global Configuration"
+        verbose_name_plural = "Global Configuration"
+
+    @classmethod
+    def get_config(cls):
+        config = cls.objects.first()
+        if not config:
+            config = cls.objects.create()
+        return config
+
+    def __str__(self):
+        return f"Global Configuration {self.id}"
+
+
 class Wallet(models.Model):
     user = models.OneToOneField(User, related_name="wallet", on_delete=models.CASCADE)
     balance = models.DecimalField(max_digits=14, decimal_places=6, default=0)
@@ -74,12 +92,13 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=User)
 def issue_signup_credits(sender, instance, created, **kwargs):
     """
-    Issue 100 credits to a new user upon signup.
+    Issue free credits based on global config to a new user upon signup.
     """
     if created:
         try:
+            config = GlobalConfig.get_config()
             wallet = Wallet.fetch_for_user(instance)
-            wallet.topup(amount=100, notes="Signup bonus")
-            logger.info(f"Issued 100 signup credits to user {instance.email}")
+            wallet.topup(amount=config.free_credit, notes="Signup bonus")
+            logger.info(f"Issued {config.free_credit} signup credits to user {instance.email}")
         except Exception as e:
             logger.error(f"Failed to issue signup credits for user {instance.email}: {e}")

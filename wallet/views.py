@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework import mixins, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
@@ -109,3 +109,14 @@ class TransactionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, Gener
         if user.user_type != User.ADMIN:
             qs = qs.filter(wallet__user=user)
         return qs
+
+
+class IsCustomAdminUser(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.user_type == User.ADMIN)
+
+
+class GlobalConfigViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, mixins.CreateModelMixin, mixins.DestroyModelMixin, GenericViewSet):
+    queryset = models.GlobalConfig.objects.all()
+    serializer_class = serializers.GlobalConfigSerializer
+    permission_classes = [IsCustomAdminUser]
