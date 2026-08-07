@@ -55,10 +55,15 @@ SPECTACULAR_SETTINGS = {
     # OTHER SETTINGS
 }
 
+from core.views import ContactUsView
+
 urlpatterns = [
 
     path('', api_root, name='api_root'),
     path('admin/', admin.site.urls),
+    
+    # Contact Us
+    path('api/v1/contact/', ContactUsView.as_view(), name='contact_us'),
     
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
